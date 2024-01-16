@@ -8,8 +8,8 @@ use tokio::{
     runtime::Runtime as TokioRuntime,
     select, spawn,
     sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender},
-    task::LocalSet,
-    time::{interval, sleep, Instant, MissedTickBehavior},
+    task::{spawn_blocking, LocalSet},
+    time::{sleep, Instant},
 };
 
 const NUM_TEST_BATCHES: usize = 20;
@@ -43,14 +43,15 @@ fn main() {
     let (lua_tx, msg_rx) = unbounded_channel::<RuntimeMessage>();
 
     set.block_on(&rt, async {
-        select! {
-            _ = set.spawn_local(lua_main(lua_rx, lua_tx)) => {},
-            _ = spawn(sched_main(msg_rx, msg_tx)) => {},
-        }
+        // TODO: Handle result
+        let _ = select! {
+            r = spawn_blocking(|| lua_main(lua_rx, lua_tx)) => r,
+            r = spawn(sched_main(msg_rx, msg_tx)) => r,
+        };
     });
 }
 
-async fn lua_main(mut rx: RuntimeReceiver, tx: RuntimeSender) -> LuaResult<()> {
+fn lua_main(mut rx: RuntimeReceiver, tx: RuntimeSender) -> LuaResult<()> {
     let lua = Lua::new();
     let g = lua.globals();
 
@@ -90,9 +91,6 @@ async fn lua_main(mut rx: RuntimeReceiver, tx: RuntimeSender) -> LuaResult<()> {
 
     let before = Instant::now();
 
-    let mut throttle = interval(Duration::from_millis(5));
-    throttle.set_missed_tick_behavior(MissedTickBehavior::Delay);
-
     for n in 1..=NUM_TEST_BATCHES {
         println!("Running batch {n} of {NUM_TEST_BATCHES}");
 
@@ -107,12 +105,6 @@ async fn lua_main(mut rx: RuntimeReceiver, tx: RuntimeSender) -> LuaResult<()> {
             if runnable_threads.is_empty() && yielded_threads.is_empty() {
                 break;
             }
-
-            // Limit this loop to a maximum of 200hz, this lets us improve performance
-            // by batching more work and not switching between running threads and waiting
-            // for the next message as often. It may however add another 5 milliseconds of
-            // latency to something like a web server, but the tradeoff is worth it.
-            throttle.tick().await;
 
             // Resume as many threads as possible
             for (thread_id, thread) in runnable_threads.drain() {
@@ -139,7 +131,7 @@ async fn lua_main(mut rx: RuntimeReceiver, tx: RuntimeSender) -> LuaResult<()> {
                 }
                 _ => unreachable!(),
             };
-            if let Some(message) = rx.recv().await {
+            if let Some(message) = rx.blocking_recv() {
                 process_message(message);
                 while let Ok(message) = rx.try_recv() {
                     process_message(message);
@@ -151,6 +143,7 @@ async fn lua_main(mut rx: RuntimeReceiver, tx: RuntimeSender) -> LuaResult<()> {
     }
 
     let after = Instant::now();
+
     println!(
         "Ran {} threads in {:?}",
         NUM_TEST_BATCHES * NUM_TEST_THREADS,
