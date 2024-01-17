@@ -5,5 +5,8 @@ edition = "2021"
 
 [dependencies]
 anyhow = "1.0"
+dashmap = "5.5"
+gxhash = "2.3"
+
 tokio = { version = "1.0", features = ["full"] }
 mlua = { version = "0.9", features = ["luau", "luau-jit"] }
