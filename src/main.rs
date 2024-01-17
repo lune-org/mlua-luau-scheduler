@@ -10,12 +10,15 @@ use tokio::{
 };
 
 mod args;
+mod error_storage;
 mod lua;
+mod lua_ext;
 mod message;
 mod stats;
 mod thread_id;
 
 use args::*;
+use error_storage::*;
 use lua::*;
 use message::*;
 use stats::*;
@@ -61,18 +64,25 @@ fn main() {
 fn main_lua_task(mut rx: MessageReceiver, tx: MessageSender, stats: Stats) -> LuaResult<()> {
     let lua = create_lua(tx.clone())?;
 
+    let error_storage = ErrorStorage::new();
+    let error_storage_interrupt = error_storage.clone();
+    lua.set_interrupt(move |_| match error_storage_interrupt.take() {
+        Some(e) => Err(e),
+        None => Ok(LuaVmState::Continue),
+    });
+
     lua.globals()
         .set("wait", lua.load(WAIT_IMPL).into_function()?)?;
 
-    let mut yielded_threads: GxHashMap<ThreadId, LuaThread> = GxHashMap::default();
-    let mut runnable_threads: GxHashMap<ThreadId, (LuaThread, Args)> = GxHashMap::default();
+    let mut yielded_threads = GxHashMap::default();
+    let mut runnable_threads = GxHashMap::default();
 
     println!("Running {NUM_TEST_BATCHES} batches");
     for _ in 0..NUM_TEST_BATCHES {
         let main_fn = lua.load(MAIN_CHUNK).into_function()?;
         for _ in 0..NUM_TEST_THREADS {
             let thread = lua.create_thread(main_fn.clone())?;
-            runnable_threads.insert(ThreadId::from(&thread), (thread, Args::new()));
+            runnable_threads.insert(ThreadId::from(&thread), (thread, Ok(Args::new())));
         }
 
         loop {
@@ -82,13 +92,20 @@ fn main_lua_task(mut rx: MessageReceiver, tx: MessageSender, stats: Stats) -> Lu
             }
 
             // Resume as many threads as possible
-            for (thread_id, (thread, args)) in runnable_threads.drain() {
+            for (thread_id, (thread, res)) in runnable_threads.drain() {
                 stats.incr(StatsCounter::ThreadResumed);
+                // NOTE: If we got an error we don't need to resume with any args
+                let args = match res {
+                    Ok(a) => a,
+                    Err(e) => {
+                        error_storage.replace(e);
+                        Args::from(())
+                    }
+                };
                 if let Err(e) = thread.resume::<_, ()>(args) {
                     tx.send(Message::Error(thread_id, Box::new(e)))
                         .expect("failed to send error to async task");
-                }
-                if thread.status() == LuaThreadStatus::Resumable {
+                } else if thread.status() == LuaThreadStatus::Resumable {
                     yielded_threads.insert(thread_id, thread);
                 }
             }
@@ -100,9 +117,9 @@ fn main_lua_task(mut rx: MessageReceiver, tx: MessageSender, stats: Stats) -> Lu
             // Set up message processor - we mutably borrow both yielded_threads and runnable_threads
             // so we can't really do this outside of the loop, but it compiles down to the same thing
             let mut process_message = |message| match message {
-                Message::Resume(thread_id, args) => {
+                Message::Resume(thread_id, res) => {
                     if let Some(thread) = yielded_threads.remove(&thread_id) {
-                        runnable_threads.insert(thread_id, (thread, args));
+                        runnable_threads.insert(thread_id, (thread, res));
                     }
                 }
                 Message::Cancel(thread_id) => {
@@ -160,7 +177,7 @@ async fn main_async_task(
                 spawn(async move {
                     sleep(duration).await;
                     let elapsed = Instant::now() - yielded_at;
-                    tx.send(Message::Resume(thread_id, Args::from(elapsed)))
+                    tx.send(Message::Resume(thread_id, Ok(Args::from(elapsed))))
                 });
             }
             Message::Error(_, e) => {

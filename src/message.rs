@@ -12,7 +12,7 @@ pub type MessageSender = UnboundedSender<Message>;
 pub type MessageReceiver = UnboundedReceiver<Message>;
 
 pub enum Message {
-    Resume(ThreadId, Args),
+    Resume(ThreadId, LuaResult<Args>),
     Cancel(ThreadId),
     Sleep(ThreadId, Instant, Duration),
     Error(ThreadId, Box<LuaError>),
