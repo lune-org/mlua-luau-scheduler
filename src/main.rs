@@ -1,22 +1,25 @@
-use std::{sync::Arc, time::Duration};
-
-use dashmap::DashMap;
 use gxhash::GxHashMap;
 use mlua::prelude::*;
 use tokio::{
     io::{self, AsyncWriteExt},
     runtime::Runtime as TokioRuntime,
     select, spawn,
-    sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender},
+    sync::mpsc::{unbounded_channel, UnboundedReceiver},
     task::{spawn_blocking, LocalSet},
     time::{sleep, Instant},
 };
 
 mod args;
+mod lua;
+mod message;
+mod stats;
 mod thread_id;
 
-use args::Args;
-use thread_id::ThreadId;
+use args::*;
+use lua::*;
+use message::*;
+use stats::*;
+use thread_id::*;
 
 const NUM_TEST_BATCHES: usize = 20;
 const NUM_TEST_THREADS: usize = 50_000;
@@ -29,54 +32,6 @@ const WAIT_IMPL: &str = r#"
 __scheduler__resumeAfter(...)
 return coroutine.yield()
 "#;
-
-type MessageSender = UnboundedSender<Message>;
-type MessageReceiver = UnboundedReceiver<Message>;
-
-enum Message {
-    Resume(ThreadId, Args),
-    Cancel(ThreadId),
-    Sleep(ThreadId, Instant, Duration),
-    Error(ThreadId, Box<LuaError>),
-    WriteStdout(Vec<u8>),
-    WriteStderr(Vec<u8>),
-}
-
-#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
-enum StatsCounter {
-    ThreadResumed,
-    ThreadCancelled,
-    ThreadSlept,
-    ThreadErrored,
-    WriteStdout,
-    WriteStderr,
-}
-
-#[derive(Debug, Clone)]
-struct Stats {
-    start: Instant,
-    counters: Arc<DashMap<StatsCounter, usize>>,
-}
-
-impl Stats {
-    fn new() -> Self {
-        Self {
-            start: Instant::now(),
-            counters: Arc::new(DashMap::new()),
-        }
-    }
-
-    fn incr(&self, counter: StatsCounter) {
-        self.counters
-            .entry(counter)
-            .and_modify(|c| *c += 1)
-            .or_insert(1);
-    }
-
-    fn elapsed(&self) -> Duration {
-        Instant::now() - self.start
-    }
-}
 
 fn main() {
     let rt = TokioRuntime::new().unwrap();
@@ -104,58 +59,10 @@ fn main() {
 }
 
 fn main_lua_task(mut rx: MessageReceiver, tx: MessageSender, stats: Stats) -> LuaResult<()> {
-    let lua = Lua::new();
-    let g = lua.globals();
+    let lua = create_lua(tx.clone())?;
 
-    lua.enable_jit(true);
-    lua.set_app_data(tx.clone());
-
-    let send_message = |lua: &Lua, msg: Message| {
-        lua.app_data_ref::<MessageSender>()
-            .unwrap()
-            .send(msg)
-            .unwrap();
-    };
-
-    g.set(
-        "__scheduler__resumeAfter",
-        LuaFunction::wrap(move |lua, duration: f64| {
-            let thread_id = ThreadId::from(lua.current_thread());
-            let yielded_at = Instant::now();
-            let duration = Duration::from_secs_f64(duration);
-            send_message(lua, Message::Sleep(thread_id, yielded_at, duration));
-            Ok(())
-        }),
-    )?;
-
-    g.set(
-        "__scheduler__cancel",
-        LuaFunction::wrap(move |lua, thread: LuaThread| {
-            let thread_id = ThreadId::from(thread);
-            send_message(lua, Message::Cancel(thread_id));
-            Ok(())
-        }),
-    )?;
-
-    g.set(
-        "__scheduler__writeStdout",
-        LuaFunction::wrap(move |lua, s: LuaString| {
-            let bytes = s.as_bytes().to_vec();
-            send_message(lua, Message::WriteStdout(bytes));
-            Ok(())
-        }),
-    )?;
-
-    g.set(
-        "__scheduler__writeStderr",
-        LuaFunction::wrap(move |lua, s: LuaString| {
-            let bytes = s.as_bytes().to_vec();
-            send_message(lua, Message::WriteStderr(bytes));
-            Ok(())
-        }),
-    )?;
-
-    g.set("wait", lua.load(WAIT_IMPL).into_function()?)?;
+    lua.globals()
+        .set("wait", lua.load(WAIT_IMPL).into_function()?)?;
 
     let mut yielded_threads: GxHashMap<ThreadId, LuaThread> = GxHashMap::default();
     let mut runnable_threads: GxHashMap<ThreadId, (LuaThread, Args)> = GxHashMap::default();
@@ -178,7 +85,8 @@ fn main_lua_task(mut rx: MessageReceiver, tx: MessageSender, stats: Stats) -> Lu
             for (thread_id, (thread, args)) in runnable_threads.drain() {
                 stats.incr(StatsCounter::ThreadResumed);
                 if let Err(e) = thread.resume::<_, ()>(args) {
-                    send_message(&lua, Message::Error(thread_id, Box::new(e)));
+                    tx.send(Message::Error(thread_id, Box::new(e)))
+                        .expect("failed to send error to async task");
                 }
                 if thread.status() == LuaThreadStatus::Resumable {
                     yielded_threads.insert(thread_id, thread);
