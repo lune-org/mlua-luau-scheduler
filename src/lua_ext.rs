@@ -5,6 +5,11 @@ use tokio::{spawn, task::spawn_local};
 
 use crate::{AsyncValues, Message, MessageSender, ThreadId};
 
+const ASYNC_IMPL: &str = r#"
+run(...)
+return yield()
+"#;
+
 pub trait LuaAsyncExt<'lua> {
     fn current_thread_id(&'lua self) -> ThreadId;
 
@@ -37,7 +42,12 @@ impl<'lua> LuaAsyncExt<'lua> for Lua {
     {
         let tx = self.app_data_ref::<MessageSender>().unwrap().clone();
 
-        self.create_function(move |lua, args: A| {
+        let yld = self
+            .globals()
+            .get::<_, LuaTable>("coroutine")?
+            .get::<_, LuaFunction>("yield")?;
+
+        let run = self.create_function(move |lua, args: A| {
             let thread_id = lua.current_thread_id();
             let fut = f(lua, args);
             let tx = tx.clone();
@@ -50,7 +60,16 @@ impl<'lua> LuaAsyncExt<'lua> for Lua {
             });
 
             Ok(())
-        })
+        })?;
+
+        let env = self.create_table()?;
+        env.set("yield", yld)?;
+        env.set("run", run)?;
+
+        self.load(ASYNC_IMPL)
+            .set_environment(env)
+            .set_name("async")
+            .into_function()
     }
 
     fn create_local_async_function<A, R, F, FR>(&'lua self, f: F) -> LuaResult<LuaFunction<'lua>>
@@ -62,7 +81,12 @@ impl<'lua> LuaAsyncExt<'lua> for Lua {
     {
         let tx = self.app_data_ref::<MessageSender>().unwrap().clone();
 
-        self.create_function(move |lua, args: A| {
+        let yld = self
+            .globals()
+            .get::<_, LuaTable>("coroutine")?
+            .get::<_, LuaFunction>("yield")?;
+
+        let run = self.create_function(move |lua, args: A| {
             let thread_id = lua.current_thread_id();
             let fut = f(lua, args);
             let tx = tx.clone();
@@ -75,6 +99,15 @@ impl<'lua> LuaAsyncExt<'lua> for Lua {
             });
 
             Ok(())
-        })
+        })?;
+
+        let env = self.create_table()?;
+        env.set("yield", yld)?;
+        env.set("run", run)?;
+
+        self.load(ASYNC_IMPL)
+            .set_environment(env)
+            .set_name("async")
+            .into_function()
     }
 }
