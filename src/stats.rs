@@ -6,8 +6,8 @@ use tokio::time::Instant;
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
 pub enum StatsCounter {
     ThreadResumed,
+    ThreadYielded,
     ThreadCancelled,
-    ThreadSlept,
     ThreadErrored,
     WriteStdout,
     WriteStderr,
