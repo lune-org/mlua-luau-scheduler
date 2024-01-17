@@ -41,6 +41,69 @@ impl From<bool> for Arg {
     }
 }
 
+impl From<u8> for Arg {
+    #[inline]
+    fn from(u: u8) -> Self {
+        Arg::Number(u as f64)
+    }
+}
+
+impl From<u16> for Arg {
+    #[inline]
+    fn from(u: u16) -> Self {
+        Arg::Number(u as f64)
+    }
+}
+
+impl From<u32> for Arg {
+    #[inline]
+    fn from(u: u32) -> Self {
+        Arg::Number(u as f64)
+    }
+}
+
+impl From<u64> for Arg {
+    #[inline]
+    fn from(u: u64) -> Self {
+        Arg::Number(u as f64)
+    }
+}
+
+impl From<i8> for Arg {
+    #[inline]
+    fn from(i: i8) -> Self {
+        Arg::Number(i as f64)
+    }
+}
+
+impl From<i16> for Arg {
+    #[inline]
+    fn from(i: i16) -> Self {
+        Arg::Number(i as f64)
+    }
+}
+
+impl From<i32> for Arg {
+    #[inline]
+    fn from(i: i32) -> Self {
+        Arg::Number(i as f64)
+    }
+}
+
+impl From<i64> for Arg {
+    #[inline]
+    fn from(i: i64) -> Self {
+        Arg::Number(i as f64)
+    }
+}
+
+impl From<f32> for Arg {
+    #[inline]
+    fn from(n: f32) -> Self {
+        Arg::Number(n as f64)
+    }
+}
+
 impl From<f64> for Arg {
     #[inline]
     fn from(n: f64) -> Self {
@@ -52,6 +115,20 @@ impl From<String> for Arg {
     #[inline]
     fn from(s: String) -> Self {
         Arg::String(s)
+    }
+}
+
+impl From<&String> for Arg {
+    #[inline]
+    fn from(s: &String) -> Self {
+        Arg::String(s.to_owned())
+    }
+}
+
+impl From<&str> for Arg {
+    #[inline]
+    fn from(s: &str) -> Self {
+        Arg::String(s.to_owned())
     }
 }
 
