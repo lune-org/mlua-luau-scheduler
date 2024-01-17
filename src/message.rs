@@ -15,7 +15,7 @@ pub enum Message {
     Resume(ThreadId, LuaResult<AsyncValues>),
     Cancel(ThreadId),
     Sleep(ThreadId, Instant, Duration),
-    Error(ThreadId, Box<LuaError>),
+    WriteError(LuaError),
     WriteStdout(Vec<u8>),
     WriteStderr(Vec<u8>),
 }

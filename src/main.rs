@@ -103,8 +103,7 @@ fn main_lua_task(mut rx: MessageReceiver, tx: MessageSender, stats: Stats) -> Lu
                     }
                 };
                 if let Err(e) = thread.resume::<_, ()>(args) {
-                    tx.send(Message::Error(thread_id, Box::new(e)))
-                        .expect("failed to send error to async task");
+                    tx.send(Message::WriteError(e)).unwrap();
                 } else if thread.status() == LuaThreadStatus::Resumable {
                     yielded_threads.insert(thread_id, thread);
                 }
@@ -165,7 +164,7 @@ async fn main_async_task(
     let process_message = |message| {
         match message {
             Message::Sleep(_, _, _) => stats.incr(StatsCounter::ThreadSlept),
-            Message::Error(_, _) => stats.incr(StatsCounter::ThreadErrored),
+            Message::WriteError(_) => stats.incr(StatsCounter::ThreadErrored),
             Message::WriteStdout(_) => stats.incr(StatsCounter::WriteStdout),
             Message::WriteStderr(_) => stats.incr(StatsCounter::WriteStderr),
             _ => unreachable!(),
@@ -180,7 +179,7 @@ async fn main_async_task(
                     tx.send(Message::Resume(thread_id, Ok(AsyncValues::from(elapsed))))
                 });
             }
-            Message::Error(_, e) => {
+            Message::WriteError(e) => {
                 forward_stderr(b"Lua error: ".to_vec());
                 forward_stderr(e.to_string().as_bytes().to_vec());
             }
