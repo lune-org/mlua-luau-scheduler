@@ -3,13 +3,13 @@ use std::future::Future;
 use mlua::prelude::*;
 use tokio::spawn;
 
-use crate::{Args, Message, MessageSender, ThreadId};
+use crate::{AsyncValues, Message, MessageSender, ThreadId};
 
 pub trait LuaSchedulerExt<'lua> {
     fn create_async_function<A, R, F, FR>(&'lua self, func: F) -> LuaResult<LuaFunction<'lua>>
     where
         A: FromLuaMulti<'lua> + 'static,
-        R: Into<Args> + Send + 'static,
+        R: Into<AsyncValues> + Send + 'static,
         F: Fn(&'lua Lua, A) -> FR + 'static,
         FR: Future<Output = LuaResult<R>> + Send + 'static;
 }
@@ -18,7 +18,7 @@ impl<'lua> LuaSchedulerExt<'lua> for Lua {
     fn create_async_function<A, R, F, FR>(&'lua self, func: F) -> LuaResult<LuaFunction<'lua>>
     where
         A: FromLuaMulti<'lua> + 'static,
-        R: Into<Args> + Send + 'static,
+        R: Into<AsyncValues> + Send + 'static,
         F: Fn(&'lua Lua, A) -> FR + 'static,
         FR: Future<Output = LuaResult<R>> + Send + 'static,
     {

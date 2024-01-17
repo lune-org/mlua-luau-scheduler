@@ -9,20 +9,20 @@ use tokio::{
     time::{sleep, Instant},
 };
 
-mod args;
 mod error_storage;
 mod lua;
 mod lua_ext;
 mod message;
 mod stats;
 mod thread_id;
+mod value;
 
-use args::*;
 use error_storage::*;
 use lua::*;
 use message::*;
 use stats::*;
 use thread_id::*;
+use value::*;
 
 const NUM_TEST_BATCHES: usize = 20;
 const NUM_TEST_THREADS: usize = 50_000;
@@ -82,7 +82,7 @@ fn main_lua_task(mut rx: MessageReceiver, tx: MessageSender, stats: Stats) -> Lu
         let main_fn = lua.load(MAIN_CHUNK).into_function()?;
         for _ in 0..NUM_TEST_THREADS {
             let thread = lua.create_thread(main_fn.clone())?;
-            runnable_threads.insert(ThreadId::from(&thread), (thread, Ok(Args::new())));
+            runnable_threads.insert(ThreadId::from(&thread), (thread, Ok(AsyncValues::new())));
         }
 
         loop {
@@ -99,7 +99,7 @@ fn main_lua_task(mut rx: MessageReceiver, tx: MessageSender, stats: Stats) -> Lu
                     Ok(a) => a,
                     Err(e) => {
                         error_storage.replace(e);
-                        Args::from(())
+                        AsyncValues::from(())
                     }
                 };
                 if let Err(e) = thread.resume::<_, ()>(args) {
@@ -177,7 +177,7 @@ async fn main_async_task(
                 spawn(async move {
                     sleep(duration).await;
                     let elapsed = Instant::now() - yielded_at;
-                    tx.send(Message::Resume(thread_id, Ok(Args::from(elapsed))))
+                    tx.send(Message::Resume(thread_id, Ok(AsyncValues::from(elapsed))))
                 });
             }
             Message::Error(_, e) => {

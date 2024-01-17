@@ -6,13 +6,13 @@ use tokio::{
     time::Instant,
 };
 
-use crate::{Args, ThreadId};
+use crate::{AsyncValues, ThreadId};
 
 pub type MessageSender = UnboundedSender<Message>;
 pub type MessageReceiver = UnboundedReceiver<Message>;
 
 pub enum Message {
-    Resume(ThreadId, LuaResult<Args>),
+    Resume(ThreadId, LuaResult<AsyncValues>),
     Cancel(ThreadId),
     Sleep(ThreadId, Instant, Duration),
     Error(ThreadId, Box<LuaError>),
