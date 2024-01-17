@@ -1,7 +1,7 @@
 use mlua::prelude::*;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 
-use crate::{AsyncValues, ThreadId};
+use crate::tokio::{AsyncValues, ThreadId};
 
 pub type MessageSender = UnboundedSender<Message>;
 pub type MessageReceiver = UnboundedReceiver<Message>;

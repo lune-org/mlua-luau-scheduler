@@ -3,7 +3,7 @@ use std::future::Future;
 use mlua::prelude::*;
 use tokio::{spawn, task::spawn_local};
 
-use crate::{AsyncValues, Message, MessageSender, ThreadId};
+use crate::tokio::{AsyncValues, Message, MessageSender, ThreadId};
 
 const ASYNC_IMPL: &str = r#"
 run(...)

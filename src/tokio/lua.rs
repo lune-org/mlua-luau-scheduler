@@ -1,6 +1,6 @@
 use mlua::prelude::*;
 
-use crate::{Message, MessageSender, ThreadId};
+use crate::tokio::{Message, MessageSender, ThreadId};
 
 pub fn create_lua(lua_tx: MessageSender, async_tx: MessageSender) -> LuaResult<Lua> {
     let lua = Lua::new();
