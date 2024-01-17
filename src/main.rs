@@ -1,5 +1,7 @@
-mod tokio;
+mod smol;
+// mod tokio;
 
 fn main() {
-    tokio::main();
+    let _ = smol::main();
+    // let _ = tokio::main();
 }
