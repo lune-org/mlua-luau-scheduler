@@ -189,7 +189,8 @@ fn main_lua_task(mut rx: MessageReceiver, tx: MessageSender, stats: Stats) -> Lu
                 break; // All threads ran, and we don't have any async task that can spawn more
             }
 
-            // Wait for at least one message, but try to receive as many as possible
+            // Set up message processor - we mutably borrow both yielded_threads and runnable_threads
+            // so we can't really do this outside of the loop, but it compiles down to the same thing
             let mut process_message = |message| match message {
                 Message::Resume(thread_id, args) => {
                     if let Some(thread) = yielded_threads.remove(&thread_id) {
@@ -203,6 +204,8 @@ fn main_lua_task(mut rx: MessageReceiver, tx: MessageSender, stats: Stats) -> Lu
                 }
                 _ => unreachable!(),
             };
+
+            // Wait for at least one message, but try to receive as many as possible
             if let Some(message) = rx.blocking_recv() {
                 process_message(message);
                 while let Ok(message) = rx.try_recv() {
@@ -222,67 +225,86 @@ async fn main_async_task(
     tx: MessageSender,
     stats: Stats,
 ) -> LuaResult<()> {
-    let mut handle_stdout = io::stdout();
-    let mut handle_stderr = io::stderr();
+    // Give stdio its own task, we don't need it to block the scheduler
+    let (tx_stdout, rx_stdout) = unbounded_channel();
+    let (tx_stderr, rx_stderr) = unbounded_channel();
+    let forward_stdout = |data| tx_stdout.send(data).ok();
+    let forward_stderr = |data| tx_stderr.send(data).ok();
+    spawn(async move {
+        if let Err(e) = async_stdio_task(rx_stdout, rx_stderr).await {
+            eprintln!("Stdio fatal error: {e}");
+        }
+    });
+
+    // Set up message processor
+    let process_message = |message| {
+        match message {
+            Message::Sleep(_, _, _) => stats.incr(StatsCounter::ThreadSlept),
+            Message::Error(_, _) => stats.incr(StatsCounter::ThreadErrored),
+            Message::WriteStdout(_) => stats.incr(StatsCounter::WriteStdout),
+            Message::WriteStderr(_) => stats.incr(StatsCounter::WriteStderr),
+            _ => unreachable!(),
+        }
+
+        match message {
+            Message::Sleep(thread_id, yielded_at, duration) => {
+                let tx = tx.clone();
+                spawn(async move {
+                    sleep(duration).await;
+                    let elapsed = Instant::now() - yielded_at;
+                    tx.send(Message::Resume(thread_id, Args::from(elapsed)))
+                });
+            }
+            Message::Error(_, e) => {
+                forward_stderr(b"Lua error: ".to_vec());
+                forward_stderr(e.to_string().as_bytes().to_vec());
+            }
+            Message::WriteStdout(data) => {
+                forward_stdout(data);
+            }
+            Message::WriteStderr(data) => {
+                forward_stderr(data);
+            }
+            _ => unreachable!(),
+        }
+    };
 
     // Wait for at least one message, but try to receive as many as possible
-    let mut messages = Vec::new();
     while let Some(message) = rx.recv().await {
-        messages.push(message);
+        process_message(message);
         while let Ok(message) = rx.try_recv() {
-            messages.push(message);
-        }
-
-        // Handle all messages
-        let mut wrote_stdout = false;
-        let mut wrote_stderr = false;
-        for message in messages.drain(..) {
-            match message {
-                Message::Sleep(_, _, _) => stats.incr(StatsCounter::ThreadSlept),
-                Message::Error(_, _) => stats.incr(StatsCounter::ThreadErrored),
-                Message::WriteStdout(_) => stats.incr(StatsCounter::WriteStdout),
-                Message::WriteStderr(_) => stats.incr(StatsCounter::WriteStderr),
-                _ => unreachable!(),
-            }
-
-            match message {
-                Message::Sleep(thread_id, yielded_at, duration) => {
-                    let tx = tx.clone();
-                    spawn(async move {
-                        sleep(duration).await;
-                        let elapsed = Instant::now() - yielded_at;
-                        tx.send(Message::Resume(thread_id, Args::from(elapsed)))
-                    });
-                }
-                Message::Error(_, e) => {
-                    wrote_stderr = true;
-                    handle_stderr.write_all(b"Lua error: ").await?;
-                    handle_stderr.write_all(e.to_string().as_bytes()).await?;
-                }
-                Message::WriteStdout(data) => {
-                    wrote_stdout = true;
-                    handle_stdout.write_all(&data).await?;
-                }
-                Message::WriteStderr(data) => {
-                    wrote_stderr = true;
-                    handle_stderr.write_all(&data).await?;
-                }
-                _ => unreachable!(),
-            }
-        }
-
-        // Flush streams if we wrote anything to them
-        if wrote_stdout {
-            handle_stdout.flush().await?;
-        }
-        if wrote_stderr {
-            handle_stderr.flush().await?;
+            process_message(message);
         }
     }
 
-    // Flush stdio one extra final time, just in case
-    handle_stdout.flush().await?;
-    handle_stderr.flush().await?;
+    Ok(())
+}
+
+async fn async_stdio_task(
+    mut rx_stdout: UnboundedReceiver<Vec<u8>>,
+    mut rx_stderr: UnboundedReceiver<Vec<u8>>,
+) -> LuaResult<()> {
+    let mut stdout = io::stdout();
+    let mut stderr = io::stderr();
+
+    loop {
+        select! {
+            data = rx_stdout.recv() => match data {
+                None => break, // Main task exited
+                Some(data) => {
+                    stdout.write_all(&data).await?;
+                    stdout.flush().await?;
+                }
+            },
+            data = rx_stderr.recv() => match data {
+                None => break, // Main task exited
+                Some(data) => {
+                    stderr.write_all(&data).await?;
+                    stderr.flush().await?;
+                }
+            }
+        }
+    }
 
     Ok(())
 }
