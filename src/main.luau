@@ -1,5 +1,6 @@
 for i = 1, 5 do
 	print("iteration " .. tostring(i) .. " of 5")
+	local thread = coroutine.running()
 
 	local counter = 0
 	for j = 1, 10_000 do
@@ -8,10 +9,10 @@ for i = 1, 5 do
 			counter += 1
 			if counter == 10_000 then
 				print("completed iteration " .. tostring(i) .. " of 5")
+				spawn(thread)
 			end
 		end)
 	end
 
-	-- FIXME: This resumes instantly with mlua "async" feature
 	coroutine.yield()
 end
