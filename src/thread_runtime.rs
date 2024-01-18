@@ -74,18 +74,15 @@ impl ThreadRuntime {
         lua.globals().set("spawn", fn_spawn)?;
         lua.globals().set("defer", fn_defer)?;
 
-        // HACK: Extract mlua "pending" constant value
+        // HACK: Extract mlua "pending" constant value and store it
         let pending = lua
             .create_async_function(|_, ()| async move {
                 yield_now().await;
                 Ok(())
-            })
-            .unwrap()
-            .into_lua_thread(lua)
-            .unwrap()
-            .resume::<_, LuaValue>(())
-            .unwrap();
-        let pending_key = lua.create_registry_value(pending).unwrap();
+            })?
+            .into_lua_thread(lua)?
+            .resume::<_, LuaValue>(())?;
+        let pending_key = lua.create_registry_value(pending)?;
 
         Ok(ThreadRuntime {
             pending_key,
@@ -112,7 +109,7 @@ impl ThreadRuntime {
         let stored = ThreadWithArgs::new(lua, thread, args);
 
         self.queue.lock_blocking().push_front(stored);
-        self.tx.try_send(()).unwrap();
+        self.tx.try_send(()).unwrap(); // Unwrap is safe since this struct also holds the receiver
     }
 
     /**
@@ -149,7 +146,9 @@ impl ThreadRuntime {
                     // before we got here, so we need to check it again
                     let (thread, args) = queued_thread.into_inner(lua);
                     if thread.status() == LuaThreadStatus::Resumable {
-                        let pending = lua.registry_value(&self.pending_key).unwrap();
+                        let pending = lua
+                            .registry_value(&self.pending_key)
+                            .expect("ran out of memory");
                         let mut stream = thread.into_async::<_, LuaValue>(args);
 
                         // Keep resuming the thread until we get a
