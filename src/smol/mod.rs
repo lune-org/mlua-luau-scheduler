@@ -1,25 +1,38 @@
-use std::{
-    rc::Rc,
-    time::{Duration, Instant},
-};
+use std::time::{Duration, Instant};
 
 use mlua::prelude::*;
 use smol::*;
 
-const NUM_TEST_BATCHES: usize = 20;
-const NUM_TEST_THREADS: usize = 50_000;
-
 const MAIN_CHUNK: &str = r#"
-wait(0.01 * math.random())
+for i = 1, 5 do
+    print("iteration " .. tostring(i) .. " of 5")
+    local thread = coroutine.running()
+    local counter = 0
+    for j = 1, 10_000 do
+        __scheduler__spawn(function()
+            wait(0.1 * math.random())
+            counter += 1
+            if counter == 10_000 then
+                print("completed iteration " .. tostring(i) .. " of 5")
+            end
+        end)
+    end
+    coroutine.yield() -- FIXME: This resumes instantly with mlua "async" feature
+end
 "#;
 
-mod executor;
-use executor::*;
+mod thread_runtime;
+mod thread_storage;
+mod thread_util;
+
+use thread_runtime::*;
+use thread_storage::*;
 
 pub fn main() -> LuaResult<()> {
-    let lua = Rc::new(Lua::new());
-    let rt = LuaExecutor::new(Rc::clone(&lua));
+    let start = Instant::now();
+    let lua = Lua::new();
 
+    // Set up persistent lua environment
     lua.globals().set(
         "wait",
         lua.create_async_function(|_, duration: f64| async move {
@@ -29,28 +42,10 @@ pub fn main() -> LuaResult<()> {
         })?,
     )?;
 
-    let start = Instant::now();
-    let main_fn = lua.load(MAIN_CHUNK).into_function()?;
-
-    for _ in 0..NUM_TEST_BATCHES {
-        rt.run(|lua, lua_exec, _| {
-            // TODO: Figure out how to create a scheduler queue that we can
-            // append threads to, both front and back, and resume them in order
-
-            for _ in 0..NUM_TEST_THREADS {
-                let thread = lua.create_thread(main_fn.clone())?;
-                let task = lua_exec.spawn(async move {
-                    if let Err(err) = thread.into_async::<_, ()>(()).await {
-                        println!("error: {}", err);
-                    }
-                    Ok::<_, LuaError>(())
-                });
-                task.detach();
-            }
-
-            Ok(())
-        })?;
-    }
+    // Set up runtime (thread queue / async executors) and run main script until end
+    let rt = ThreadRuntime::new(&lua)?;
+    rt.push_main(&lua, lua.load(MAIN_CHUNK), ());
+    rt.run_blocking(&lua);
 
     println!("elapsed: {:?}", start.elapsed());
 
