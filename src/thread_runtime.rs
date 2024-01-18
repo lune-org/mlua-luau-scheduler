@@ -69,8 +69,8 @@ impl ThreadRuntime {
 
         // FUTURE: Store these as named registry values instead
         // so that they are not accessible from within user code
-        lua.globals().set("__scheduler__spawn", fn_spawn)?;
-        lua.globals().set("__scheduler__defer", fn_defer)?;
+        lua.globals().set("spawn", fn_spawn)?;
+        lua.globals().set("defer", fn_defer)?;
 
         Ok(ThreadRuntime { queue, tx, rx })
     }
