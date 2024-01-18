@@ -3,7 +3,7 @@ use std::{collections::VecDeque, rc::Rc};
 use mlua::prelude::*;
 use smol::{
     channel::{Receiver, Sender},
-    future::{yield_now, FutureExt},
+    future::FutureExt,
     lock::Mutex,
     stream::StreamExt,
     *,
@@ -15,7 +15,6 @@ use super::{
 };
 
 pub struct ThreadRuntime {
-    pending_key: LuaRegistryKey,
     queue: Rc<Mutex<VecDeque<ThreadWithArgs>>>,
     tx: Sender<()>,
     rx: Receiver<()>,
@@ -74,22 +73,7 @@ impl ThreadRuntime {
         lua.globals().set("spawn", fn_spawn)?;
         lua.globals().set("defer", fn_defer)?;
 
-        // HACK: Extract mlua "pending" constant value and store it
-        let pending = lua
-            .create_async_function(|_, ()| async move {
-                yield_now().await;
-                Ok(())
-            })?
-            .into_lua_thread(lua)?
-            .resume::<_, LuaValue>(())?;
-        let pending_key = lua.create_registry_value(pending)?;
-
-        Ok(ThreadRuntime {
-            pending_key,
-            queue,
-            tx,
-            rx,
-        })
+        Ok(ThreadRuntime { queue, tx, rx })
     }
 
     /**
@@ -145,26 +129,22 @@ impl ThreadRuntime {
                     // before we got here, so we need to check it again
                     let (thread, args) = queued_thread.into_inner(lua);
                     if thread.status() == LuaThreadStatus::Resumable {
-                        let pending = lua
-                            .registry_value(&self.pending_key)
-                            .expect("ran out of memory");
                         let mut stream = thread.into_async::<_, LuaValue>(args);
-
-                        // Keep resuming the thread until we get a
-                        // value that is not the mlua pending value
-                        let fut = async move {
-                            while let Some(res) = stream.next().await {
-                                match res {
-                                    Err(e) => eprintln!("{e}"),
-                                    Ok(v) if v != pending => {
-                                        break;
+                        lua_exec
+                            .spawn(async move {
+                                // Only run stream until first coroutine.yield or completion,
+                                // this will then get dropped right away and clear stack space
+                                match stream.next().await.unwrap() {
+                                    Err(e) => {
+                                        eprintln!("{e}");
+                                        // TODO: Forward error
                                     }
-                                    Ok(_) => {}
+                                    Ok(_) => {
+                                        // TODO: Forward value
+                                    }
                                 }
-                            }
-                        };
-
-                        lua_exec.spawn(fut).detach();
+                            })
+                            .detach();
                     }
                 }
 
