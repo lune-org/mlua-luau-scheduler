@@ -3,7 +3,7 @@ use std::{collections::VecDeque, rc::Rc};
 use mlua::prelude::*;
 use smol::{
     channel::{Receiver, Sender},
-    future::{race, yield_now},
+    future::{yield_now, FutureExt},
     lock::Mutex,
     stream::StreamExt,
     *,
@@ -127,17 +127,16 @@ impl ThreadRuntime {
         // executor forward, until all lua threads finish
         let fut = async {
             loop {
-                race(
-                    // Wait for next futures step...
-                    async {
+                // Wait for a new thread to arrive __or__ next futures step, prioritizing
+                // new threads, so we don't accidentally exit when there is more work to do
+                self.rx
+                    .recv()
+                    .or(async {
                         lua_exec.tick().await;
-                    },
-                    // ...or for a new thread to arrive
-                    async {
-                        self.rx.recv().await.ok();
-                    },
-                )
-                .await;
+                        Ok(())
+                    })
+                    .await
+                    .ok();
 
                 // If a new thread was spawned onto queue, we
                 // must drain it and schedule on the executor
