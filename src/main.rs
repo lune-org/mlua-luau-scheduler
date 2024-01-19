@@ -1,11 +1,8 @@
 use std::time::{Duration, Instant};
 
-use mlua::prelude::*;
-use smol::*;
+use smol_mlua::{mlua::prelude::*, smol::*, Callbacks, Runtime};
 
 const MAIN_SCRIPT: &str = include_str!("./main.luau");
-
-use smol_mlua::{thread_callbacks::ThreadCallbacks, thread_runtime::ThreadRuntime};
 
 pub fn main() -> LuaResult<()> {
     let start = Instant::now();
@@ -23,12 +20,12 @@ pub fn main() -> LuaResult<()> {
     )?;
 
     // Set up runtime (thread queue / async executors)
-    let rt = ThreadRuntime::new(&lua)?;
+    let rt = Runtime::new(&lua)?;
     let main = rt.push_main(&lua, lua.load(MAIN_SCRIPT), ());
     lua.set_named_registry_value("main", main)?;
 
     // Add callbacks to capture resulting value/error of main thread
-    ThreadCallbacks::new()
+    Callbacks::new()
         .on_value(|lua, thread, val| {
             let main = lua.named_registry_value::<LuaThread>("main").unwrap();
             if main == thread {

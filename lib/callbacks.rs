@@ -4,13 +4,13 @@ type ErrorCallback = Box<dyn for<'lua> Fn(&'lua Lua, LuaThread<'lua>, LuaError) 
 type ValueCallback = Box<dyn for<'lua> Fn(&'lua Lua, LuaThread<'lua>, LuaValue<'lua>) + 'static>;
 
 #[derive(Default)]
-pub struct ThreadCallbacks {
+pub struct Callbacks {
     on_error: Option<ErrorCallback>,
     on_value: Option<ValueCallback>,
 }
 
-impl ThreadCallbacks {
-    pub fn new() -> ThreadCallbacks {
+impl Callbacks {
+    pub fn new() -> Callbacks {
         Default::default()
     }
 

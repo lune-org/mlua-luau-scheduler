@@ -10,12 +10,10 @@ use smol::{
 };
 
 use super::{
-    thread_callbacks::ThreadCallbacks,
-    thread_storage::ThreadWithArgs,
-    thread_util::{IntoLuaThread, LuaThreadOrFunction},
+    callbacks::Callbacks, storage::ThreadWithArgs, traits::IntoLuaThread, util::LuaThreadOrFunction,
 };
 
-pub struct ThreadRuntime {
+pub struct Runtime {
     queue_status: Rc<Cell<bool>>,
     queue_spawn: Rc<Mutex<Vec<ThreadWithArgs>>>,
     queue_defer: Rc<Mutex<Vec<ThreadWithArgs>>>,
@@ -23,13 +21,13 @@ pub struct ThreadRuntime {
     rx: Receiver<()>,
 }
 
-impl ThreadRuntime {
+impl Runtime {
     /**
         Creates a new runtime for the given Lua state.
 
         This will inject some functions to interact with the scheduler / executor.
     */
-    pub fn new(lua: &Lua) -> LuaResult<ThreadRuntime> {
+    pub fn new(lua: &Lua) -> LuaResult<Runtime> {
         let queue_status = Rc::new(Cell::new(false));
         let queue_spawn = Rc::new(Mutex::new(Vec::new()));
         let queue_defer = Rc::new(Mutex::new(Vec::new()));
@@ -65,8 +63,8 @@ impl ThreadRuntime {
                                 LuaError::runtime("Tried to spawn thread to a dropped queue")
                             })?;
                         }
-                        Ok(v) => ThreadCallbacks::forward_value(lua, thread.clone(), v),
-                        Err(e) => ThreadCallbacks::forward_error(lua, thread.clone(), e),
+                        Ok(v) => Callbacks::forward_value(lua, thread.clone(), v),
+                        Err(e) => Callbacks::forward_error(lua, thread.clone(), e),
                     }
                     Ok(thread)
                 } else {
@@ -101,7 +99,7 @@ impl ThreadRuntime {
         lua.globals().set("spawn", fn_spawn)?;
         lua.globals().set("defer", fn_defer)?;
 
-        Ok(ThreadRuntime {
+        Ok(Runtime {
             queue_status,
             queue_spawn,
             queue_defer,
@@ -182,8 +180,8 @@ impl ThreadRuntime {
                                     // drop it right away to clear stack space since detached tasks dont drop
                                     // until the executor drops https://github.com/smol-rs/smol/issues/294
                                     match stream.next().await.unwrap() {
-                                        Ok(v) => ThreadCallbacks::forward_value(lua, thread, v),
-                                        Err(e) => ThreadCallbacks::forward_error(lua, thread, e),
+                                        Ok(v) => Callbacks::forward_value(lua, thread, v),
+                                        Err(e) => Callbacks::forward_error(lua, thread, e),
                                     };
                                 })
                                 .detach();

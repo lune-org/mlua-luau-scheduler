@@ -1,7 +1,7 @@
 use mlua::prelude::*;
 
 #[derive(Debug)]
-pub struct ThreadWithArgs {
+pub(crate) struct ThreadWithArgs {
     key_thread: LuaRegistryKey,
     key_args: LuaRegistryKey,
 }
