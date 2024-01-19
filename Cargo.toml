@@ -9,3 +9,6 @@ mlua = { version = "0.9", features = ["luau", "luau-jit", "async"] }
 
 [lib]
 path = "lib/lib.rs"
+
+[examples]
+main = "examples/main.rs"

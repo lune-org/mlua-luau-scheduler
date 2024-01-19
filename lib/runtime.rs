@@ -13,6 +13,9 @@ use super::{
     callbacks::Callbacks, storage::ThreadWithArgs, traits::IntoLuaThread, util::LuaThreadOrFunction,
 };
 
+const GLOBAL_NAME_SPAWN: &str = "__runtime__spawn";
+const GLOBAL_NAME_DEFER: &str = "__runtime__defer";
+
 pub struct Runtime {
     queue_status: Rc<Cell<bool>>,
     queue_spawn: Rc<Mutex<Vec<ThreadWithArgs>>>,
@@ -94,10 +97,9 @@ impl Runtime {
             },
         )?;
 
-        // FUTURE: Store these as named registry values instead
-        // so that they are not accessible from within user code
-        lua.globals().set("spawn", fn_spawn)?;
-        lua.globals().set("defer", fn_defer)?;
+        // Store them both as globals
+        lua.globals().set(GLOBAL_NAME_SPAWN, fn_spawn)?;
+        lua.globals().set(GLOBAL_NAME_DEFER, fn_defer)?;
 
         Ok(Runtime {
             queue_status,
@@ -196,7 +198,7 @@ impl Runtime {
             }
         };
 
-        main_exec.run(fut).await
+        main_exec.run(fut).await;
     }
 
     /**
