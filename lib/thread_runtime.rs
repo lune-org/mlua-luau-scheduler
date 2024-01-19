@@ -10,8 +10,9 @@ use smol::{
 };
 
 use super::{
+    thread_callbacks::ThreadCallbacks,
+    thread_storage::ThreadWithArgs,
     thread_util::{IntoLuaThread, LuaThreadOrFunction},
-    ThreadWithArgs,
 };
 
 pub struct ThreadRuntime {
@@ -56,10 +57,6 @@ impl ThreadRuntime {
                     // and only if we get the pending value back we can spawn to async executor
                     let pending: LuaValue = lua.registry_value(&pending_key)?;
                     match thread.resume::<_, LuaValue>(args.clone()) {
-                        Err(e) => {
-                            eprintln!("{:?}", e);
-                            // TODO: Forward error
-                        }
                         Ok(v) if v == pending => {
                             let stored = ThreadWithArgs::new(lua, thread.clone(), args);
                             q_spawn.lock_blocking().push(stored);
@@ -68,9 +65,8 @@ impl ThreadRuntime {
                                 LuaError::runtime("Tried to spawn thread to a dropped queue")
                             })?;
                         }
-                        Ok(_) => {
-                            // TODO: Forward value
-                        }
+                        Ok(v) => ThreadCallbacks::forward_value(lua, thread.clone(), v),
+                        Err(e) => ThreadCallbacks::forward_error(lua, thread.clone(), e),
                     }
                     Ok(thread)
                 } else {
@@ -122,17 +118,19 @@ impl ThreadRuntime {
         lua: &'lua Lua,
         thread: impl IntoLuaThread<'lua>,
         args: impl IntoLuaMulti<'lua>,
-    ) {
+    ) -> LuaThread<'lua> {
         let thread = thread
             .into_lua_thread(lua)
             .expect("failed to create thread");
         let args = args.into_lua_multi(lua).expect("failed to create args");
 
-        let stored = ThreadWithArgs::new(lua, thread, args);
+        let stored = ThreadWithArgs::new(lua, thread.clone(), args);
 
         self.queue_spawn.lock_blocking().push(stored);
         self.queue_status.replace(true);
         self.tx.try_send(()).unwrap(); // Unwrap is safe since this struct also holds the receiver
+
+        thread
     }
 
     /**
@@ -177,21 +175,16 @@ impl ThreadRuntime {
                         // before we got here, so we need to check it again
                         let (thread, args) = queued_thread.into_inner(lua);
                         if thread.status() == LuaThreadStatus::Resumable {
-                            let mut stream = thread.into_async::<_, LuaValue>(args);
+                            let mut stream = thread.clone().into_async::<_, LuaValue>(args);
                             lua_exec
                                 .spawn(async move {
                                     // Only run stream until first coroutine.yield or completion. We will
                                     // drop it right away to clear stack space since detached tasks dont drop
                                     // until the executor drops https://github.com/smol-rs/smol/issues/294
                                     match stream.next().await.unwrap() {
-                                        Err(e) => {
-                                            eprintln!("{e}");
-                                            // TODO: Forward error
-                                        }
-                                        Ok(_) => {
-                                            // TODO: Forward value
-                                        }
-                                    }
+                                        Ok(v) => ThreadCallbacks::forward_value(lua, thread, v),
+                                        Err(e) => ThreadCallbacks::forward_error(lua, thread, e),
+                                    };
                                 })
                                 .detach();
                         }

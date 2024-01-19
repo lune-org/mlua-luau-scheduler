@@ -5,12 +5,7 @@ use smol::*;
 
 const MAIN_SCRIPT: &str = include_str!("./main.luau");
 
-mod thread_runtime;
-mod thread_storage;
-mod thread_util;
-
-use thread_runtime::*;
-use thread_storage::*;
+use smol_mlua::{thread_callbacks::ThreadCallbacks, thread_runtime::ThreadRuntime};
 
 pub fn main() -> LuaResult<()> {
     let start = Instant::now();
@@ -27,9 +22,28 @@ pub fn main() -> LuaResult<()> {
         })?,
     )?;
 
-    // Set up runtime (thread queue / async executors) and run main script until end
+    // Set up runtime (thread queue / async executors)
     let rt = ThreadRuntime::new(&lua)?;
-    rt.push_main(&lua, lua.load(MAIN_SCRIPT), ());
+    let main = rt.push_main(&lua, lua.load(MAIN_SCRIPT), ());
+    lua.set_named_registry_value("main", main)?;
+
+    // Add callbacks to capture resulting value/error of main thread
+    ThreadCallbacks::new()
+        .on_value(|lua, thread, val| {
+            let main = lua.named_registry_value::<LuaThread>("main").unwrap();
+            if main == thread {
+                println!("main thread value: {:?}", val);
+            }
+        })
+        .on_error(|lua, thread, err| {
+            let main = lua.named_registry_value::<LuaThread>("main").unwrap();
+            if main == thread {
+                eprintln!("main thread error: {:?}", err);
+            }
+        })
+        .inject(&lua);
+
+    // Run until end
     rt.run_blocking(&lua);
 
     println!("elapsed: {:?}", start.elapsed());

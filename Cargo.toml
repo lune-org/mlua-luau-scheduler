@@ -1,8 +1,11 @@
 [package]
-name = "luau-scheduler-experiments"
+name = "smol-mlua"
 version = "0.0.0"
 edition = "2021"
 
 [dependencies]
 smol = "2.0"
 mlua = { version = "0.9", features = ["luau", "luau-jit", "async"] }
+
+[lib]
+path = "lib/lib.rs"

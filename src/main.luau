@@ -1,18 +1,19 @@
-for i = 1, 20 do
-	print("iteration " .. tostring(i) .. " of 20")
-	local thread = coroutine.running()
+local start = os.clock()
 
-	local counter = 0
-	for j = 1, 50_000 do
-		spawn(function()
-			wait()
-			counter += 1
-			if counter == 50_000 then
-				print("completed iteration " .. tostring(i) .. " of 20")
-				spawn(thread)
-			end
-		end)
-	end
+local thread = coroutine.running()
 
-	coroutine.yield()
+local counter = 0
+for j = 1, 10_000 do
+	spawn(function()
+		wait()
+		counter += 1
+		if counter == 10_000 then
+			print("completed")
+			spawn(thread)
+		end
+	end)
 end
+
+coroutine.yield()
+
+return os.clock() - start
