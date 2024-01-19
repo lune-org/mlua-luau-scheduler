@@ -20,7 +20,7 @@ pub fn main() -> LuaResult<()> {
     lua.globals().set(
         "wait",
         lua.create_async_function(|_, duration: Option<f64>| async move {
-            let duration = duration.unwrap_or_default().min(1.0 / 250.0);
+            let duration = duration.unwrap_or_default().max(1.0 / 250.0);
             let before = Instant::now();
             let after = Timer::after(Duration::from_secs_f64(duration)).await;
             Ok((after - before).as_secs_f64())
