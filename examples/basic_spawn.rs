@@ -6,7 +6,7 @@ use smol_mlua::{
     LuaExecutorExt, Runtime,
 };
 
-const MAIN_SCRIPT: &str = include_str!("./basic_spawn.luau");
+const MAIN_SCRIPT: &str = include_str!("../lua/basic_spawn.luau");
 
 pub fn main() -> LuaResult<()> {
     // Set up persistent lua environment

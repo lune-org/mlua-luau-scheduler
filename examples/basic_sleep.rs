@@ -6,7 +6,7 @@ use smol_mlua::{
     Runtime,
 };
 
-const MAIN_SCRIPT: &str = include_str!("./basic_sleep.luau");
+const MAIN_SCRIPT: &str = include_str!("../lua/basic_sleep.luau");
 
 pub fn main() -> LuaResult<()> {
     // Set up persistent lua environment

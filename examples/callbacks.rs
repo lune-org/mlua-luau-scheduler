@@ -3,7 +3,7 @@ use smol_mlua::{
     Callbacks, Runtime,
 };
 
-const MAIN_SCRIPT: &str = include_str!("./callbacks.luau");
+const MAIN_SCRIPT: &str = include_str!("../lua/callbacks.luau");
 
 pub fn main() -> LuaResult<()> {
     // Set up persistent lua environment

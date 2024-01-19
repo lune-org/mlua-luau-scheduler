@@ -6,7 +6,7 @@ use smol_mlua::{
     Runtime,
 };
 
-const MAIN_SCRIPT: &str = include_str!("./lots_of_threads.luau");
+const MAIN_SCRIPT: &str = include_str!("../lua/lots_of_threads.luau");
 
 const ONE_NANOSECOND: Duration = Duration::from_nanos(1);
 

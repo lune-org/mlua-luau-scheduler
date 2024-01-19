@@ -9,7 +9,7 @@ use smol_mlua::{
     Callbacks, IntoLuaThread, Runtime,
 };
 
-const MAIN_SCRIPT: &str = include_str!("./main.luau");
+const MAIN_SCRIPT: &str = include_str!("../lua/main.luau");
 
 pub fn main() -> LuaResult<()> {
     // Set up persistent lua environment

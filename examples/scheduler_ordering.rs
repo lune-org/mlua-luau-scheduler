@@ -6,7 +6,7 @@ use smol_mlua::{
     Runtime,
 };
 
-const MAIN_SCRIPT: &str = include_str!("./scheduler_ordering.luau");
+const MAIN_SCRIPT: &str = include_str!("../lua/scheduler_ordering.luau");
 
 pub fn main() -> LuaResult<()> {
     // Set up persistent lua environment
