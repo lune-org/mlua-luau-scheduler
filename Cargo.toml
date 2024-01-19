@@ -11,4 +11,7 @@ mlua = { version = "0.9", features = ["luau", "luau-jit", "async"] }
 path = "lib/lib.rs"
 
 [examples]
+basic-sleep = "examples/basic_sleep.rs"
+basic-spawn = "examples/basic_spawn.rs"
 main = "examples/main.rs"
+scheduler-ordering = "examples/scheduler_ordering.rs"
