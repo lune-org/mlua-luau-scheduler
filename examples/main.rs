@@ -45,28 +45,30 @@ pub fn main() -> LuaResult<()> {
 fn run<'lua>(lua: &'lua Lua, main: impl IntoLuaThread<'lua>) -> LuaResult<LuaValue> {
     // Set up runtime (thread queue / async executors)
     let rt = Runtime::new(lua)?;
-    let thread = rt.push_main(lua, main, ());
+    let thread = rt.push_thread(lua, main, ());
     lua.set_named_registry_value("mainThread", thread)?;
 
-    // Add callbacks to capture resulting value/error of main thread,
-    // we need to do some tricks to get around lifetime issues with 'lua
-    // being different inside the callback vs outside the callback for LuaValue
+    // Create callbacks to capture resulting value/error of main thread,
+    // we need to do some tricks to get around the lifetime issues with 'lua
+    // being different inside the callback vs. outside the callback, for LuaValue
     let captured_error = Rc::new(Mutex::new(None));
     let captured_error_inner = Rc::clone(&captured_error);
-    Callbacks::new()
-        .on_value(|lua, thread, val| {
-            let main: LuaThread = lua.named_registry_value("mainThread").unwrap();
-            if main == thread {
-                lua.set_named_registry_value("mainValue", val).unwrap();
-            }
-        })
-        .on_error(move |lua, thread, err| {
-            let main: LuaThread = lua.named_registry_value("mainThread").unwrap();
-            if main == thread {
-                captured_error_inner.lock_blocking().replace(err);
-            }
-        })
-        .inject(lua);
+    rt.set_callbacks(
+        lua,
+        Callbacks::new()
+            .on_value(|lua, thread, val| {
+                let main: LuaThread = lua.named_registry_value("mainThread").unwrap();
+                if main == thread {
+                    lua.set_named_registry_value("mainValue", val).unwrap();
+                }
+            })
+            .on_error(move |lua, thread, err| {
+                let main: LuaThread = lua.named_registry_value("mainThread").unwrap();
+                if main == thread {
+                    captured_error_inner.lock_blocking().replace(err);
+                }
+            }),
+    );
 
     // Run until end
     rt.run_blocking(lua);

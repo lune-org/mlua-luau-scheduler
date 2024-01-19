@@ -29,7 +29,8 @@ impl Runtime {
     /**
         Creates a new runtime for the given Lua state.
 
-        This will inject some functions to interact with the scheduler / executor.
+        This will inject some functions to interact with the scheduler / executor,
+        as well as the default [`Callbacks`] for thread values and errors.
     */
     pub fn new(lua: &Lua) -> LuaResult<Runtime> {
         let queue_status = Rc::new(Cell::new(false));
@@ -106,6 +107,9 @@ impl Runtime {
         lua.globals().set(GLOBAL_NAME_SPAWN, fn_spawn)?;
         lua.globals().set(GLOBAL_NAME_DEFER, fn_defer)?;
 
+        // Finally, inject default callbacks
+        Callbacks::default().inject(lua);
+
         Ok(Runtime {
             queue_status,
             queue_spawn,
@@ -116,9 +120,20 @@ impl Runtime {
     }
 
     /**
-        Pushes a chunk / function / thread to the front of the runtime.
+        Sets the callbacks for this runtime.
+
+        This will overwrite any previously set callbacks, including default ones.
     */
-    pub fn push_main<'lua>(
+    pub fn set_callbacks(&self, lua: &Lua, callbacks: Callbacks) {
+        callbacks.inject(lua);
+    }
+
+    /**
+        Pushes a chunk / function / thread to the runtime queue.
+
+        Threads are guaranteed to be resumed in the order that they were pushed to the queue.
+    */
+    pub fn push_thread<'lua>(
         &self,
         lua: &'lua Lua,
         thread: impl IntoLuaThread<'lua>,

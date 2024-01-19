@@ -6,16 +6,34 @@ type ErrorCallback = Box<dyn for<'lua> Fn(&'lua Lua, LuaThread<'lua>, LuaError) 
 const FORWARD_VALUE_KEY: &str = "__runtime__forwardValue";
 const FORWARD_ERROR_KEY: &str = "__runtime__forwardError";
 
+/**
+    A set of callbacks for thread values and errors.
+
+    These callbacks are used to forward values and errors from
+    Lua threads back to Rust. By default, the runtime will print
+    any errors to stderr and not do any operations with values.
+
+    You can set your own callbacks using the `on_value` and `on_error` builder methods.
+*/
 pub struct Callbacks {
     on_value: Option<ValueCallback>,
     on_error: Option<ErrorCallback>,
 }
 
 impl Callbacks {
-    pub fn new() -> Callbacks {
-        Default::default()
+    /**
+        Creates a new set of callbacks with no callbacks set.
+    */
+    pub fn new() -> Self {
+        Self {
+            on_value: None,
+            on_error: None,
+        }
     }
 
+    /**
+        Sets the callback for thread values being yielded / returned.
+    */
     pub fn on_value<F>(mut self, f: F) -> Self
     where
         F: Fn(&Lua, LuaThread, LuaValue) + 'static,
@@ -24,6 +42,9 @@ impl Callbacks {
         self
     }
 
+    /**
+        Sets the callback for thread errors.
+    */
     pub fn on_error<F>(mut self, f: F) -> Self
     where
         F: Fn(&Lua, LuaThread, LuaError) + 'static,
@@ -32,17 +53,27 @@ impl Callbacks {
         self
     }
 
+    /**
+        Removes any current thread value callback.
+    */
     pub fn without_value_callback(mut self) -> Self {
         self.on_value.take();
         self
     }
 
+    /**
+        Removes any current thread error callback.
+    */
     pub fn without_error_callback(mut self) -> Self {
         self.on_error.take();
         self
     }
 
-    pub fn inject(self, lua: &Lua) {
+    pub(crate) fn inject(self, lua: &Lua) {
+        // Remove any previously injected callbacks
+        lua.unset_named_registry_value(FORWARD_VALUE_KEY).ok();
+        lua.unset_named_registry_value(FORWARD_ERROR_KEY).ok();
+
         // Create functions to forward values & errors
         if let Some(f) = self.on_value {
             lua.set_named_registry_value(
