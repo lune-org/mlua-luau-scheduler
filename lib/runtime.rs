@@ -1,4 +1,4 @@
-use std::{cell::Cell, rc::Rc};
+use std::{cell::Cell, rc::Rc, sync::Arc};
 
 use mlua::prelude::*;
 use smol::{
@@ -18,6 +18,7 @@ const GLOBAL_NAME_DEFER: &str = "__runtime__defer";
 
 pub struct Runtime {
     queue_status: Rc<Cell<bool>>,
+    // TODO: Use something better than Rc<Mutex<Vec<...>>>
     queue_spawn: Rc<Mutex<Vec<ThreadWithArgs>>>,
     queue_defer: Rc<Mutex<Vec<ThreadWithArgs>>>,
     tx: Sender<()>,
@@ -45,6 +46,10 @@ impl Runtime {
             .into_lua_thread(lua)?
             .resume::<_, LuaValue>(())?;
         let pending_key = lua.create_registry_value(pending)?;
+
+        // TODO: Generalize these two functions below so we
+        // dont need to duplicate the same exact thing for
+        // spawn and defer which is prone to human error
 
         // Create spawn function (push to start of queue)
         let b_spawn = Rc::clone(&queue_status);
@@ -142,7 +147,12 @@ impl Runtime {
     pub async fn run_async(&self, lua: &Lua) {
         // Create new executors to use
         let lua_exec = LocalExecutor::new();
-        let main_exec = Executor::new();
+        let main_exec = Arc::new(Executor::new());
+
+        // TODO: Create multiple executors for work stealing
+
+        // Store the main executor in lua for LuaExecutorExt trait
+        lua.set_app_data(Arc::downgrade(&main_exec));
 
         // Tick local lua executor while also driving main
         // executor forward, until all lua threads finish

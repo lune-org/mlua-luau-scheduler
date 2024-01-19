@@ -9,4 +9,4 @@ pub use smol;
 
 pub use callbacks::Callbacks;
 pub use runtime::Runtime;
-pub use traits::IntoLuaThread;
+pub use traits::{IntoLuaThread, LuaExecutorExt};
