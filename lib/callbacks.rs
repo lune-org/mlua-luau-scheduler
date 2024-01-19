@@ -6,7 +6,6 @@ type ErrorCallback = Box<dyn for<'lua> Fn(&'lua Lua, LuaThread<'lua>, LuaError) 
 const FORWARD_VALUE_KEY: &str = "__runtime__forwardValue";
 const FORWARD_ERROR_KEY: &str = "__runtime__forwardError";
 
-#[derive(Default)]
 pub struct Callbacks {
     on_value: Option<ValueCallback>,
     on_error: Option<ErrorCallback>,
@@ -30,6 +29,16 @@ impl Callbacks {
         F: Fn(&Lua, LuaThread, LuaError) + 'static,
     {
         self.on_error.replace(Box::new(f));
+        self
+    }
+
+    pub fn without_value_callback(mut self) -> Self {
+        self.on_value.take();
+        self
+    }
+
+    pub fn without_error_callback(mut self) -> Self {
+        self.on_error.take();
         self
     }
 
@@ -71,4 +80,18 @@ impl Callbacks {
             f.call::<_, ()>((thread, error)).unwrap();
         }
     }
+}
+
+impl Default for Callbacks {
+    fn default() -> Self {
+        Callbacks {
+            on_value: Some(Box::new(default_value_callback)),
+            on_error: Some(Box::new(default_error_callback)),
+        }
+    }
+}
+
+fn default_value_callback(_: &Lua, _: LuaThread, _: LuaValue) {}
+fn default_error_callback(_: &Lua, _: LuaThread, e: LuaError) {
+    eprintln!("{e}");
 }
