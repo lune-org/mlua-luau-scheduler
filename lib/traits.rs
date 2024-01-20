@@ -70,7 +70,7 @@ pub trait LuaExecutorExt<'lua> {
             )?;
 
             let rt = Runtime::new(&lua)?;
-            rt.push_main(lua.load("spawnBackgroundTask()"), ());
+            rt.push_thread(lua.load("spawnBackgroundTask()"), ());
             rt.run_blocking();
 
             Ok(())
