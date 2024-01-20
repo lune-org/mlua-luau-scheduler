@@ -163,11 +163,11 @@ impl<'lua> Runtime<'lua> {
         used to create this runtime, otherwise this method may panic.
     */
     pub async fn run_async(&self) {
-        // Create new executors to use
+        // Create new executors to use - note that we do not need to create multiple executors
+        // for work stealing, using the `spawn` global function that smol provides will work
+        // just fine, as long as anything spawned by it is awaited from lua async functions
         let lua_exec = LocalExecutor::new();
         let main_exec = Arc::new(Executor::new());
-
-        // TODO: Create multiple executors for work stealing
 
         // Store the main executor in lua for LuaExecutorExt trait
         self.lua.set_app_data(Arc::downgrade(&main_exec));
