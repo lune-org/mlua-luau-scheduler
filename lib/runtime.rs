@@ -16,7 +16,8 @@ use super::{
 const GLOBAL_NAME_SPAWN: &str = "__runtime__spawn";
 const GLOBAL_NAME_DEFER: &str = "__runtime__defer";
 
-pub struct Runtime {
+pub struct Runtime<'lua> {
+    lua: &'lua Lua,
     queue_status: Rc<Cell<bool>>,
     // TODO: Use something better than Rc<Mutex<Vec<...>>>
     queue_spawn: Rc<Mutex<Vec<ThreadWithArgs>>>,
@@ -25,14 +26,14 @@ pub struct Runtime {
     rx: Receiver<()>,
 }
 
-impl Runtime {
+impl<'lua> Runtime<'lua> {
     /**
         Creates a new runtime for the given Lua state.
 
         This will inject some functions to interact with the scheduler / executor,
         as well as the default [`Callbacks`] for thread values and errors.
     */
-    pub fn new(lua: &Lua) -> LuaResult<Runtime> {
+    pub fn new(lua: &'lua Lua) -> LuaResult<Runtime<'lua>> {
         let queue_status = Rc::new(Cell::new(false));
         let queue_spawn = Rc::new(Mutex::new(Vec::new()));
         let queue_defer = Rc::new(Mutex::new(Vec::new()));
@@ -111,6 +112,7 @@ impl Runtime {
         Callbacks::default().inject(lua);
 
         Ok(Runtime {
+            lua,
             queue_status,
             queue_spawn,
             queue_defer,
@@ -124,8 +126,8 @@ impl Runtime {
 
         This will overwrite any previously set callbacks, including default ones.
     */
-    pub fn set_callbacks(&self, lua: &Lua, callbacks: Callbacks) {
-        callbacks.inject(lua);
+    pub fn set_callbacks(&self, callbacks: Callbacks) {
+        callbacks.inject(self.lua);
     }
 
     /**
@@ -133,18 +135,19 @@ impl Runtime {
 
         Threads are guaranteed to be resumed in the order that they were pushed to the queue.
     */
-    pub fn push_thread<'lua>(
+    pub fn push_thread(
         &self,
-        lua: &'lua Lua,
         thread: impl IntoLuaThread<'lua>,
         args: impl IntoLuaMulti<'lua>,
     ) -> LuaThread<'lua> {
         let thread = thread
-            .into_lua_thread(lua)
+            .into_lua_thread(self.lua)
             .expect("failed to create thread");
-        let args = args.into_lua_multi(lua).expect("failed to create args");
+        let args = args
+            .into_lua_multi(self.lua)
+            .expect("failed to create args");
 
-        let stored = ThreadWithArgs::new(lua, thread.clone(), args);
+        let stored = ThreadWithArgs::new(self.lua, thread.clone(), args);
 
         self.queue_spawn.lock_blocking().push(stored);
         self.queue_status.replace(true);
@@ -159,7 +162,7 @@ impl Runtime {
         Note that the given Lua state must be the same one that was
         used to create this runtime, otherwise this method may panic.
     */
-    pub async fn run_async(&self, lua: &Lua) {
+    pub async fn run_async(&self) {
         // Create new executors to use
         let lua_exec = LocalExecutor::new();
         let main_exec = Arc::new(Executor::new());
@@ -167,7 +170,7 @@ impl Runtime {
         // TODO: Create multiple executors for work stealing
 
         // Store the main executor in lua for LuaExecutorExt trait
-        lua.set_app_data(Arc::downgrade(&main_exec));
+        self.lua.set_app_data(Arc::downgrade(&main_exec));
 
         // Tick local lua executor while also driving main
         // executor forward, until all lua threads finish
@@ -198,7 +201,7 @@ impl Runtime {
                     for queued_thread in queued_threads {
                         // NOTE: Thread may have been cancelled from lua
                         // before we got here, so we need to check it again
-                        let (thread, args) = queued_thread.into_inner(lua);
+                        let (thread, args) = queued_thread.into_inner(self.lua);
                         if thread.status() == LuaThreadStatus::Resumable {
                             let mut stream = thread.clone().into_async::<_, LuaValue>(args);
                             lua_exec
@@ -207,8 +210,8 @@ impl Runtime {
                                     // drop it right away to clear stack space since detached tasks dont drop
                                     // until the executor drops https://github.com/smol-rs/smol/issues/294
                                     match stream.next().await.unwrap() {
-                                        Ok(v) => Callbacks::forward_value(lua, thread, v),
-                                        Err(e) => Callbacks::forward_error(lua, thread, e),
+                                        Ok(v) => Callbacks::forward_value(self.lua, thread, v),
+                                        Err(e) => Callbacks::forward_error(self.lua, thread, e),
                                     };
                                 })
                                 .detach();
@@ -231,7 +234,7 @@ impl Runtime {
 
         See [`ThreadRuntime::run_async`] for more info.
     */
-    pub fn run_blocking(&self, lua: &Lua) {
-        block_on(self.run_async(lua))
+    pub fn run_blocking(&self) {
+        block_on(self.run_async())
     }
 }

@@ -45,7 +45,7 @@ pub fn main() -> LuaResult<()> {
 fn run<'lua>(lua: &'lua Lua, main: impl IntoLuaThread<'lua>) -> LuaResult<LuaValue> {
     // Set up runtime (thread queue / async executors)
     let rt = Runtime::new(lua)?;
-    let thread = rt.push_thread(lua, main, ());
+    let thread = rt.push_thread(main, ());
     lua.set_named_registry_value("mainThread", thread)?;
 
     // Create callbacks to capture resulting value/error of main thread,
@@ -54,7 +54,6 @@ fn run<'lua>(lua: &'lua Lua, main: impl IntoLuaThread<'lua>) -> LuaResult<LuaVal
     let captured_error = Rc::new(Mutex::new(None));
     let captured_error_inner = Rc::clone(&captured_error);
     rt.set_callbacks(
-        lua,
         Callbacks::new()
             .on_value(|lua, thread, val| {
                 let main: LuaThread = lua.named_registry_value("mainThread").unwrap();
@@ -71,7 +70,7 @@ fn run<'lua>(lua: &'lua Lua, main: impl IntoLuaThread<'lua>) -> LuaResult<LuaVal
     );
 
     // Run until end
-    rt.run_blocking(lua);
+    rt.run_blocking();
 
     // Extract value and error from their containers
     let err_opt = { captured_error.lock_blocking().take() };
