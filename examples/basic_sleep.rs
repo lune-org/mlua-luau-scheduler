@@ -28,3 +28,8 @@ pub fn main() -> LuaResult<()> {
 
     Ok(())
 }
+
+#[test]
+fn test_basic_sleep() -> LuaResult<()> {
+    main()
+}

@@ -31,3 +31,8 @@ pub fn main() -> LuaResult<()> {
 
     Ok(())
 }
+
+#[test]
+fn test_lots_of_threads() -> LuaResult<()> {
+    main()
+}

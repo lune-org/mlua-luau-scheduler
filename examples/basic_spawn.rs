@@ -34,3 +34,8 @@ pub fn main() -> LuaResult<()> {
 
     Ok(())
 }
+
+#[test]
+fn test_basic_spawn() -> LuaResult<()> {
+    main()
+}

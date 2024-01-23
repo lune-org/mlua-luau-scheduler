@@ -85,3 +85,8 @@ fn run<'lua>(lua: &'lua Lua, main: impl IntoLuaThread<'lua>) -> LuaResult<LuaVal
         unreachable!("No value or error captured from main thread");
     }
 }
+
+#[test]
+fn test_captures() -> LuaResult<()> {
+    main()
+}

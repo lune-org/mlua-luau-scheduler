@@ -26,3 +26,8 @@ pub fn main() -> LuaResult<()> {
 
     Ok(())
 }
+
+#[test]
+fn test_callbacks() -> LuaResult<()> {
+    main()
+}

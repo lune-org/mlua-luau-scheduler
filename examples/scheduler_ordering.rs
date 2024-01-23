@@ -29,3 +29,8 @@ pub fn main() -> LuaResult<()> {
 
     Ok(())
 }
+
+#[test]
+fn test_scheduler_ordering() -> LuaResult<()> {
+    main()
+}
