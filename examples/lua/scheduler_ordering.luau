@@ -19,7 +19,7 @@ end)
 -- which will resume their calling thread with their result automatically
 __runtime__spawn(function()
 	print(3)
-	wait(1)
+	sleep(1)
 	print(6)
 end)
 

@@ -12,7 +12,7 @@ pub fn main() -> LuaResult<()> {
     // Set up persistent lua environment
     let lua = Lua::new();
     lua.globals().set(
-        "wait",
+        "sleep",
         lua.create_async_function(|_, duration: Option<f64>| async move {
             let duration = duration.unwrap_or_default().max(1.0 / 250.0);
             let before = Instant::now();

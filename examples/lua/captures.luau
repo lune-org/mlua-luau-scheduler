@@ -13,7 +13,7 @@ local start = os.clock()
 local counter = 0
 for j = 1, 10_000 do
 	__runtime__spawn(function()
-		wait()
+		sleep()
 		counter += 1
 		if counter == 10_000 then
 			local elapsed = os.clock() - start

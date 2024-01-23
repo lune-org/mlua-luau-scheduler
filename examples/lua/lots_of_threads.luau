@@ -1,7 +1,7 @@
 --!nocheck
 --!nolint UnknownGlobal
 
-local NUM_BATCHES = 100
+local NUM_BATCHES = 10
 local NUM_THREADS = 10_000
 
 print(`Spawning {NUM_BATCHES * NUM_THREADS} threads split into {NUM_BATCHES} batches\n`)
