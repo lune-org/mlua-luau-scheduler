@@ -1,12 +1,13 @@
 use std::{cell::Cell, rc::Rc, sync::Arc};
 
 use mlua::prelude::*;
+use smol::prelude::*;
+
 use smol::{
-    channel::{Receiver, Sender},
-    future::{yield_now, FutureExt},
+    block_on,
+    channel::{unbounded, Receiver, Sender},
     lock::Mutex,
-    stream::StreamExt,
-    *,
+    Executor, LocalExecutor,
 };
 
 use super::{
@@ -37,12 +38,12 @@ impl<'lua> Runtime<'lua> {
         let queue_status = Rc::new(Cell::new(false));
         let queue_spawn = Rc::new(Mutex::new(Vec::new()));
         let queue_defer = Rc::new(Mutex::new(Vec::new()));
-        let (tx, rx) = channel::unbounded();
+        let (tx, rx) = unbounded();
 
         // HACK: Extract mlua "pending" constant value and store it
         let pending = lua
             .create_async_function(|_, ()| async move {
-                yield_now().await;
+                smol::future::yield_now().await;
                 Ok(())
             })?
             .into_lua_thread(lua)?
