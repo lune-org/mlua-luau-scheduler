@@ -1,0 +1,17 @@
+{
+    "luau-lsp.sourcemap.enabled": false,
+    "luau-lsp.types.roblox": false,
+    "rust-analyzer.check.command": "clippy",
+    "editor.formatOnSave": true,
+    "stylua.searchParentDirectories": true,
+    "prettier.tabWidth": 2,
+    "[luau][lua]": {
+        "editor.defaultFormatter": "JohnnyMorganz.stylua"
+    },
+    "[json][jsonc][markdown][yaml]": {
+        "editor.defaultFormatter": "esbenp.prettier-vscode"
+    },
+    "[rust]": {
+        "editor.defaultFormatter": "rust-lang.rust-analyzer"
+    }
+}

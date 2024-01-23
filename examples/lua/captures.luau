@@ -1,11 +1,9 @@
 --!nocheck
 --!nolint UnknownGlobal
 
-
 if math.random() < 0.25 then
 	error("Unlucky error!")
 end
-
 
 local main = coroutine.running()
 local start = os.clock()
