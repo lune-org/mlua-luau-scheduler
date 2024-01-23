@@ -27,7 +27,7 @@ use std::time::{Duration, Instant};
 
 use smol_mlua::{
     mlua::prelude::*,
-    smol::Timer,
+    smol::{Timer, io, fs::read_to_string},
     Runtime,
 };
 ```
