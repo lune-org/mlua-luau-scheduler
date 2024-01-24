@@ -1,7 +1,5 @@
-use smol_mlua::{
-    mlua::prelude::{Lua, LuaResult},
-    Callbacks, Runtime,
-};
+use mlua::prelude::*;
+use smol_mlua::Runtime;
 
 const MAIN_SCRIPT: &str = include_str!("./lua/callbacks.luau");
 
@@ -11,17 +9,17 @@ pub fn main() -> LuaResult<()> {
 
     // Create a new runtime with custom callbacks
     let rt = Runtime::new(&lua)?;
-    rt.set_callbacks(Callbacks::default().on_error(|_, _, e| {
+    rt.set_error_callback(|e| {
         println!(
             "Captured error from Lua!\n{}\n{e}\n{}",
             "-".repeat(15),
             "-".repeat(15)
         );
-    }));
+    });
 
     // Load and run the main script until completion
     let main = lua.load(MAIN_SCRIPT);
-    rt.push_thread(main, ());
+    rt.spawn_thread(main, ())?;
     rt.run_blocking();
 
     Ok(())

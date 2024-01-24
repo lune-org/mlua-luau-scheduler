@@ -16,7 +16,10 @@
 
 <br/>
 
-Integration between [smol](https://crates.io/crates/smol) and [mlua](https://crates.io/crates/mlua) that provides a fully functional and asynchronous Luau runtime using smol executor(s).
+Integration between [smol] and [mlua] that provides a fully functional and asynchronous Luau runtime using smol executor(s).
+
+[smol]: https://crates.io/crates/smol
+[mlua]: https://crates.io/crates/mlua
 
 ## Example Usage
 
@@ -25,11 +28,9 @@ Integration between [smol](https://crates.io/crates/smol) and [mlua](https://cra
 ```rs
 use std::time::{Duration, Instant};
 
-use smol_mlua::{
-    mlua::prelude::*,
-    smol::{Timer, io, fs::read_to_string},
-    Runtime,
-};
+use mlua::prelude::*;
+use smol::{Timer, io, fs::read_to_string}
+use smol_mlua::Runtime;
 ```
 
 ### 2. Set up lua environment
@@ -68,15 +69,15 @@ lua.globals().set(
 ```rs
 let rt = Runtime::new(&lua)?;
 
-// We can create multiple lua threads
+// We can create multiple lua threads ...
 let sleepThread = lua.load("sleep(0.1)");
 let fileThread = lua.load("readFile(\"Cargo.toml\")");
 
-// Put them all into the runtime
-rt.push_thread(sleepThread, ());
-rt.push_thread(fileThread, ());
+// ... spawn them both onto the runtime ...
+rt.spawn_thread(sleepThread, ());
+rt.spawn_thread(fileThread, ());
 
-// And run either async or blocking, until above threads finish
+// ... and run either async or blocking, until they finish
 rt.run_async().await;
 rt.run_blocking();
 ```

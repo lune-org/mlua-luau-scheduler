@@ -1,10 +1,6 @@
-use mlua::ExternalResult;
-use smol::io;
-use smol_mlua::{
-    mlua::prelude::{Lua, LuaResult},
-    smol::fs::read_to_string,
-    LuaExecutorExt, Runtime,
-};
+use mlua::prelude::*;
+use smol::{fs::read_to_string, io};
+use smol_mlua::{LuaSpawnExt, Runtime};
 
 const MAIN_SCRIPT: &str = include_str!("./lua/basic_spawn.luau");
 
@@ -29,7 +25,7 @@ pub fn main() -> LuaResult<()> {
     // Load the main script into a runtime and run it until completion
     let rt = Runtime::new(&lua)?;
     let main = lua.load(MAIN_SCRIPT);
-    rt.push_thread(main, ());
+    rt.spawn_thread(main, ())?;
     rt.run_blocking();
 
     Ok(())

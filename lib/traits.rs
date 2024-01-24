@@ -36,13 +36,22 @@ impl<'lua> IntoLuaThread<'lua> for LuaChunk<'lua, '_> {
     }
 }
 
+impl<'lua, T> IntoLuaThread<'lua> for &T
+where
+    T: IntoLuaThread<'lua> + Clone,
+{
+    fn into_lua_thread(self, lua: &'lua Lua) -> LuaResult<LuaThread<'lua>> {
+        self.clone().into_lua_thread(lua)
+    }
+}
+
 /**
     Trait for spawning `Send` futures on the current executor.
 
-    For spawning non-`Send` futures on the same local executor as a [`Lua`]
+    For spawning `!Send` futures on the same local executor as a [`Lua`]
     VM instance, [`Lua::create_async_function`] should be used instead.
 */
-pub trait LuaExecutorExt<'lua> {
+pub trait LuaSpawnExt<'lua> {
     /**
         Spawns the given future on the current executor and returns its [`Task`].
 
@@ -54,7 +63,7 @@ pub trait LuaExecutorExt<'lua> {
 
         ```rust
         use mlua::prelude::*;
-        use smol_mlua::{Runtime, LuaExecutorExt};
+        use smol_mlua::{Runtime, LuaSpawnExt};
 
         fn main() -> LuaResult<()> {
             let lua = Lua::new();
@@ -70,7 +79,7 @@ pub trait LuaExecutorExt<'lua> {
             )?;
 
             let rt = Runtime::new(&lua)?;
-            rt.push_thread(lua.load("spawnBackgroundTask()"), ());
+            rt.spawn_thread(lua.load("spawnBackgroundTask()"), ());
             rt.run_blocking();
 
             Ok(())
@@ -82,7 +91,7 @@ pub trait LuaExecutorExt<'lua> {
     fn spawn<T: Send + 'static>(&self, fut: impl Future<Output = T> + Send + 'static) -> Task<T>;
 }
 
-impl<'lua> LuaExecutorExt<'lua> for Lua {
+impl<'lua> LuaSpawnExt<'lua> for Lua {
     fn spawn<T: Send + 'static>(&self, fut: impl Future<Output = T> + Send + 'static) -> Task<T> {
         let exec = self
             .app_data_ref::<Weak<Executor>>()

@@ -13,11 +13,11 @@ for i = 1, NUM_BATCHES do
 
 	local counter = 0
 	for j = 1, NUM_THREADS do
-		__runtime__spawn(function()
+		spawn(function()
 			sleep()
 			counter += 1
 			if counter == NUM_THREADS then
-				__runtime__spawn(thread)
+				spawn(thread)
 			end
 		end)
 	end

@@ -1,10 +1,8 @@
 use std::time::{Duration, Instant};
 
-use smol_mlua::{
-    mlua::prelude::{Lua, LuaResult},
-    smol::Timer,
-    Runtime,
-};
+use mlua::prelude::*;
+use smol::Timer;
+use smol_mlua::Runtime;
 
 const MAIN_SCRIPT: &str = include_str!("./lua/basic_sleep.luau");
 
@@ -23,7 +21,7 @@ pub fn main() -> LuaResult<()> {
     // Load the main script into a runtime and run it until completion
     let rt = Runtime::new(&lua)?;
     let main = lua.load(MAIN_SCRIPT);
-    rt.push_thread(main, ());
+    rt.spawn_thread(main, ())?;
     rt.run_blocking();
 
     Ok(())

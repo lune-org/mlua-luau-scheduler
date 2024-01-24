@@ -1,160 +1,149 @@
-use std::{cell::Cell, rc::Rc, sync::Arc};
+use std::sync::Arc;
 
 use mlua::prelude::*;
 use smol::prelude::*;
 
-use smol::{
-    block_on,
-    channel::{unbounded, Receiver, Sender},
-    lock::Mutex,
-    Executor, LocalExecutor,
-};
+use smol::{block_on, Executor, LocalExecutor};
 
 use super::{
-    callbacks::Callbacks, storage::ThreadWithArgs, traits::IntoLuaThread, util::LuaThreadOrFunction,
+    error_callback::ThreadErrorCallback,
+    queue::ThreadQueue,
+    traits::IntoLuaThread,
+    util::{is_poll_pending, LuaThreadOrFunction},
 };
-
-const GLOBAL_NAME_SPAWN: &str = "__runtime__spawn";
-const GLOBAL_NAME_DEFER: &str = "__runtime__defer";
 
 pub struct Runtime<'lua> {
     lua: &'lua Lua,
-    queue_status: Rc<Cell<bool>>,
-    // TODO: Use something better than Rc<Mutex<Vec<...>>>
-    queue_spawn: Rc<Mutex<Vec<ThreadWithArgs>>>,
-    queue_defer: Rc<Mutex<Vec<ThreadWithArgs>>>,
-    tx: Sender<()>,
-    rx: Receiver<()>,
+    queue_spawn: ThreadQueue,
+    queue_defer: ThreadQueue,
+    error_callback: ThreadErrorCallback,
 }
 
 impl<'lua> Runtime<'lua> {
     /**
         Creates a new runtime for the given Lua state.
 
-        This will inject some functions to interact with the scheduler / executor,
-        as well as the default [`Callbacks`] for thread values and errors.
+        This runtime will have a default error callback that prints errors to stderr.
     */
     pub fn new(lua: &'lua Lua) -> LuaResult<Runtime<'lua>> {
-        let queue_status = Rc::new(Cell::new(false));
-        let queue_spawn = Rc::new(Mutex::new(Vec::new()));
-        let queue_defer = Rc::new(Mutex::new(Vec::new()));
-        let (tx, rx) = unbounded();
-
-        // HACK: Extract mlua "pending" constant value and store it
-        let pending = lua
-            .create_async_function(|_, ()| async move {
-                smol::future::yield_now().await;
-                Ok(())
-            })?
-            .into_lua_thread(lua)?
-            .resume::<_, LuaValue>(())?;
-        let pending_key = lua.create_registry_value(pending)?;
-
-        // TODO: Generalize these two functions below so we
-        // dont need to duplicate the same exact thing for
-        // spawn and defer which is prone to human error
-
-        // Create spawn function (push to start of queue)
-        let b_spawn = Rc::clone(&queue_status);
-        let q_spawn = Rc::clone(&queue_spawn);
-        let tx_spawn = tx.clone();
-        let fn_spawn = lua.create_function(
-            move |lua, (tof, args): (LuaThreadOrFunction, LuaMultiValue)| {
-                let thread = tof.into_thread(lua)?;
-                if thread.status() == LuaThreadStatus::Resumable {
-                    // HACK: We need to resume the thread once instantly for correct behavior,
-                    // and only if we get the pending value back we can spawn to async executor
-                    let pending: LuaValue = lua.registry_value(&pending_key)?;
-                    match thread.resume::<_, LuaValue>(args.clone()) {
-                        Ok(v) if v == pending => {
-                            let stored = ThreadWithArgs::new(lua, thread.clone(), args);
-                            q_spawn.lock_blocking().push(stored);
-                            b_spawn.replace(true);
-                            tx_spawn.try_send(()).map_err(|_| {
-                                LuaError::runtime("Tried to spawn thread to a dropped queue")
-                            })?;
-                        }
-                        Ok(v) => Callbacks::forward_value(lua, thread.clone(), v),
-                        Err(e) => Callbacks::forward_error(lua, thread.clone(), e),
-                    }
-                    Ok(thread)
-                } else {
-                    Err(LuaError::runtime("Tried to spawn non-resumable thread"))
-                }
-            },
-        )?;
-
-        // Create defer function (push to end of queue)
-        let b_defer = Rc::clone(&queue_status);
-        let q_defer = Rc::clone(&queue_defer);
-        let tx_defer = tx.clone();
-        let fn_defer = lua.create_function(
-            move |lua, (tof, args): (LuaThreadOrFunction, LuaMultiValue)| {
-                let thread = tof.into_thread(lua)?;
-                if thread.status() == LuaThreadStatus::Resumable {
-                    let stored = ThreadWithArgs::new(lua, thread.clone(), args);
-                    q_defer.lock_blocking().push(stored);
-                    b_defer.replace(true);
-                    tx_defer.try_send(()).map_err(|_| {
-                        LuaError::runtime("Tried to defer thread to a dropped queue")
-                    })?;
-                    Ok(thread)
-                } else {
-                    Err(LuaError::runtime("Tried to defer non-resumable thread"))
-                }
-            },
-        )?;
-
-        // Store them both as globals
-        lua.globals().set(GLOBAL_NAME_SPAWN, fn_spawn)?;
-        lua.globals().set(GLOBAL_NAME_DEFER, fn_defer)?;
-
-        // Finally, inject default callbacks
-        Callbacks::default().inject(lua);
+        let queue_spawn = ThreadQueue::new();
+        let queue_defer = ThreadQueue::new();
+        let error_callback = ThreadErrorCallback::new_default();
 
         Ok(Runtime {
             lua,
-            queue_status,
             queue_spawn,
             queue_defer,
-            tx,
-            rx,
+            error_callback,
         })
     }
 
     /**
-        Sets the callbacks for this runtime.
+        Sets the error callback for this runtime.
 
-        This will overwrite any previously set callbacks, including default ones.
+        This callback will be called whenever a Lua thread errors.
+
+        Overwrites any previous error callback.
     */
-    pub fn set_callbacks(&self, callbacks: Callbacks) {
-        callbacks.inject(self.lua);
+    pub fn set_error_callback(&self, callback: impl Fn(LuaError) + Send + 'static) {
+        self.error_callback.replace(callback);
     }
 
     /**
-        Pushes a chunk / function / thread to the runtime queue.
+        Clears the error callback for this runtime.
+
+        This will remove any current error callback, including default(s).
+    */
+    pub fn remove_error_callback(&self) {
+        self.error_callback.clear();
+    }
+
+    /**
+        Spawns a chunk / function / thread onto the runtime queue.
 
         Threads are guaranteed to be resumed in the order that they were pushed to the queue.
     */
-    pub fn push_thread(
+    pub fn spawn_thread(
         &self,
         thread: impl IntoLuaThread<'lua>,
         args: impl IntoLuaMulti<'lua>,
-    ) -> LuaThread<'lua> {
-        let thread = thread
-            .into_lua_thread(self.lua)
-            .expect("failed to create thread");
-        let args = args
-            .into_lua_multi(self.lua)
-            .expect("failed to create args");
+    ) -> LuaResult<()> {
+        let thread = thread.into_lua_thread(self.lua)?;
+        let args = args.into_lua_multi(self.lua)?;
 
-        let stored = ThreadWithArgs::new(self.lua, thread.clone(), args);
+        self.queue_spawn.push(self.lua, thread, args)?;
 
-        self.queue_spawn.lock_blocking().push(stored);
-        self.queue_status.replace(true);
-        self.tx.try_send(()).unwrap(); // Unwrap is safe since this struct also holds the receiver
+        Ok(())
+    }
 
-        thread
+    /**
+        Defers a chunk / function / thread onto the runtime queue.
+
+        Deferred threads are guaranteed to run after all spawned threads either yield or complete.
+
+        Threads are guaranteed to be resumed in the order that they were pushed to the queue.
+    */
+    pub fn defer_thread(
+        &self,
+        thread: impl IntoLuaThread<'lua>,
+        args: impl IntoLuaMulti<'lua>,
+    ) -> LuaResult<()> {
+        let thread = thread.into_lua_thread(self.lua)?;
+        let args = args.into_lua_multi(self.lua)?;
+
+        self.queue_defer.push(self.lua, thread, args)?;
+
+        Ok(())
+    }
+
+    /**
+        Creates a lua function that can be used to spawn threads / functions onto the runtime queue.
+
+        The function takes a thread or function as the first argument, and any variadic arguments as the rest.
+    */
+    pub fn create_spawn_function(&self) -> LuaResult<LuaFunction<'lua>> {
+        let error_callback = self.error_callback.clone();
+        let spawn_queue = self.queue_spawn.clone();
+        self.lua.create_function(
+            move |lua, (tof, args): (LuaThreadOrFunction, LuaMultiValue)| {
+                let thread = tof.into_thread(lua)?;
+                if thread.status() == LuaThreadStatus::Resumable {
+                    // NOTE: We need to resume the thread once instantly for correct behavior,
+                    // and only if we get the pending value back we can spawn to async executor
+                    match thread.resume::<_, LuaValue>(args.clone()) {
+                        Ok(v) => {
+                            if is_poll_pending(&v) {
+                                spawn_queue.push(lua, &thread, args)?;
+                            }
+                        }
+                        Err(e) => {
+                            error_callback.call(&e);
+                        }
+                    };
+                }
+                Ok(thread)
+            },
+        )
+    }
+
+    /**
+        Creates a lua function that can be used to defer threads / functions onto the runtime queue.
+
+        The function takes a thread or function as the first argument, and any variadic arguments as the rest.
+
+        Deferred threads are guaranteed to run after all spawned threads either yield or complete.
+    */
+    pub fn create_defer_function(&self) -> LuaResult<LuaFunction<'lua>> {
+        let defer_queue = self.queue_defer.clone();
+        self.lua.create_function(
+            move |lua, (tof, args): (LuaThreadOrFunction, LuaMultiValue)| {
+                let thread = tof.into_thread(lua)?;
+                if thread.status() == LuaThreadStatus::Resumable {
+                    defer_queue.push(lua, &thread, args)?;
+                }
+                Ok(thread)
+            },
+        )
     }
 
     /**
@@ -170,7 +159,7 @@ impl<'lua> Runtime<'lua> {
         let lua_exec = LocalExecutor::new();
         let main_exec = Arc::new(Executor::new());
 
-        // Store the main executor in lua for LuaExecutorExt trait
+        // Store the main executor in lua for spawner trait
         self.lua.set_app_data(Arc::downgrade(&main_exec));
 
         // Tick local lua executor while also driving main
@@ -179,9 +168,8 @@ impl<'lua> Runtime<'lua> {
             loop {
                 // Wait for a new thread to arrive __or__ next futures step, prioritizing
                 // new threads, so we don't accidentally exit when there is more work to do
-                let fut_recv = async {
-                    self.rx.recv().await.ok();
-                };
+                let fut_spawn = self.queue_spawn.recv();
+                let fut_defer = self.queue_defer.recv();
                 let fut_tick = async {
                     lua_exec.tick().await;
                     // Do as much work as possible
@@ -191,18 +179,18 @@ impl<'lua> Runtime<'lua> {
                         }
                     }
                 };
-                fut_recv.or(fut_tick).await;
 
-                // If a new thread was spawned onto any queue, we
-                // must drain them and schedule on the executor
-                if self.queue_status.get() {
+                fut_spawn.or(fut_defer).or(fut_tick).await;
+
+                // If a new thread was spawned onto any queue,
+                // we must drain them and schedule on the executor
+                if self.queue_spawn.has_threads() || self.queue_defer.has_threads() {
                     let mut queued_threads = Vec::new();
-                    queued_threads.extend(self.queue_spawn.lock().await.drain(..));
-                    queued_threads.extend(self.queue_defer.lock().await.drain(..));
-                    for queued_thread in queued_threads {
+                    queued_threads.extend(self.queue_spawn.drain(self.lua).await);
+                    queued_threads.extend(self.queue_defer.drain(self.lua).await);
+                    for (thread, args) in queued_threads {
                         // NOTE: Thread may have been cancelled from lua
                         // before we got here, so we need to check it again
-                        let (thread, args) = queued_thread.into_inner(self.lua);
                         if thread.status() == LuaThreadStatus::Resumable {
                             let mut stream = thread.clone().into_async::<_, LuaValue>(args);
                             lua_exec
@@ -210,10 +198,11 @@ impl<'lua> Runtime<'lua> {
                                     // Only run stream until first coroutine.yield or completion. We will
                                     // drop it right away to clear stack space since detached tasks dont drop
                                     // until the executor drops https://github.com/smol-rs/smol/issues/294
-                                    match stream.next().await.unwrap() {
-                                        Ok(v) => Callbacks::forward_value(self.lua, thread, v),
-                                        Err(e) => Callbacks::forward_error(self.lua, thread, e),
-                                    };
+                                    let res = stream.next().await.unwrap();
+                                    if let Err(e) = &res {
+                                        self.error_callback.call(e);
+                                    }
+                                    // TODO: Figure out how to give this result to caller of spawn_thread/defer_thread
                                 })
                                 .detach();
                         }
