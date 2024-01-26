@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use concurrent_queue::ConcurrentQueue;
+use event_listener::Event;
 use mlua::prelude::*;
-use smol::channel::{unbounded, Receiver, Sender};
 
 use crate::IntoLuaThread;
 
@@ -17,22 +17,17 @@ const ERR_OOM: &str = "out of memory";
 #[derive(Debug, Clone)]
 pub struct ThreadQueue {
     queue: Arc<ConcurrentQueue<ThreadWithArgs>>,
-    signal_tx: Sender<()>,
-    signal_rx: Receiver<()>,
+    event: Arc<Event>,
 }
 
 impl ThreadQueue {
     pub fn new() -> Self {
         let queue = Arc::new(ConcurrentQueue::unbounded());
-        let (signal_tx, signal_rx) = unbounded();
-        Self {
-            queue,
-            signal_tx,
-            signal_rx,
-        }
+        let event = Arc::new(Event::new());
+        Self { queue, event }
     }
 
-    pub fn push<'lua>(
+    pub fn push_item<'lua>(
         &self,
         lua: &'lua Lua,
         thread: impl IntoLuaThread<'lua>,
@@ -43,12 +38,12 @@ impl ThreadQueue {
         let stored = ThreadWithArgs::new(lua, thread, args);
 
         self.queue.push(stored).unwrap();
-        self.signal_tx.try_send(()).unwrap();
+        self.event.notify(usize::MAX);
 
         Ok(())
     }
 
-    pub fn drain<'outer, 'lua>(
+    pub fn drain_items<'outer, 'lua>(
         &'outer self,
         lua: &'lua Lua,
     ) -> impl Iterator<Item = (LuaThread<'lua>, LuaMultiValue<'lua>)> + 'outer
@@ -58,14 +53,9 @@ impl ThreadQueue {
         self.queue.try_iter().map(|stored| stored.into_inner(lua))
     }
 
-    pub async fn listen(&self) {
-        self.signal_rx.recv().await.unwrap();
-        // Drain any pending receives
-        loop {
-            match self.signal_rx.try_recv() {
-                Ok(_) => continue,
-                Err(_) => break,
-            }
+    pub async fn wait_for_item(&self) {
+        if self.queue.is_empty() {
+            self.event.listen().await;
         }
     }
 }

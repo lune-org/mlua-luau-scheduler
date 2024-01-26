@@ -518,6 +518,7 @@ name = "smol-mlua"
 version = "0.0.0"
 dependencies = [
  "concurrent-queue",
+ "event-listener 4.0.3",
  "mlua",
  "smol",
 ]

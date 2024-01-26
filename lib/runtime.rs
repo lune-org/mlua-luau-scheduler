@@ -67,12 +67,7 @@ impl<'lua> Runtime<'lua> {
         thread: impl IntoLuaThread<'lua>,
         args: impl IntoLuaMulti<'lua>,
     ) -> LuaResult<()> {
-        let thread = thread.into_lua_thread(self.lua)?;
-        let args = args.into_lua_multi(self.lua)?;
-
-        self.queue_spawn.push(self.lua, thread, args)?;
-
-        Ok(())
+        self.queue_spawn.push_item(self.lua, thread, args)
     }
 
     /**
@@ -87,12 +82,7 @@ impl<'lua> Runtime<'lua> {
         thread: impl IntoLuaThread<'lua>,
         args: impl IntoLuaMulti<'lua>,
     ) -> LuaResult<()> {
-        let thread = thread.into_lua_thread(self.lua)?;
-        let args = args.into_lua_multi(self.lua)?;
-
-        self.queue_defer.push(self.lua, thread, args)?;
-
-        Ok(())
+        self.queue_defer.push_item(self.lua, thread, args)
     }
 
     /**
@@ -115,7 +105,7 @@ impl<'lua> Runtime<'lua> {
                                 .map(|l| l == Lua::poll_pending())
                                 .unwrap_or_default()
                             {
-                                spawn_queue.push(lua, &thread, args)?;
+                                spawn_queue.push_item(lua, &thread, args)?;
                             }
                         }
                         Err(e) => {
@@ -141,7 +131,7 @@ impl<'lua> Runtime<'lua> {
             move |lua, (tof, args): (LuaThreadOrFunction, LuaMultiValue)| {
                 let thread = tof.into_thread(lua)?;
                 if thread.status() == LuaThreadStatus::Resumable {
-                    defer_queue.push(lua, &thread, args)?;
+                    defer_queue.push_item(lua, &thread, args)?;
                 }
                 Ok(thread)
             },
@@ -184,8 +174,8 @@ impl<'lua> Runtime<'lua> {
             loop {
                 // Wait for a new thread to arrive __or__ next futures step, prioritizing
                 // new threads, so we don't accidentally exit when there is more work to do
-                let fut_spawn = self.queue_spawn.listen();
-                let fut_defer = self.queue_defer.listen();
+                let fut_spawn = self.queue_spawn.wait_for_item();
+                let fut_defer = self.queue_defer.wait_for_item();
                 let fut_tick = async {
                     lua_exec.tick().await;
                     // Do as much work as possible
@@ -221,10 +211,10 @@ impl<'lua> Runtime<'lua> {
                 };
 
                 // Process spawned threads first, then deferred threads
-                for (thread, args) in self.queue_spawn.drain(self.lua) {
+                for (thread, args) in self.queue_spawn.drain_items(self.lua) {
                     process_thread(thread, args);
                 }
-                for (thread, args) in self.queue_defer.drain(self.lua) {
+                for (thread, args) in self.queue_defer.drain_items(self.lua) {
                     process_thread(thread, args);
                 }
 

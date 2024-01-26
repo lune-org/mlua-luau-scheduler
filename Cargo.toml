@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 concurrent-queue = "2.4"
+event-listener = "4.0"
 smol = "2.0"
 mlua = { version = "0.9", features = ["luau", "luau-jit", "async"] }
 
