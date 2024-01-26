@@ -184,8 +184,8 @@ impl<'lua> Runtime<'lua> {
             loop {
                 // Wait for a new thread to arrive __or__ next futures step, prioritizing
                 // new threads, so we don't accidentally exit when there is more work to do
-                let fut_spawn = self.queue_spawn.recv();
-                let fut_defer = self.queue_defer.recv();
+                let fut_spawn = self.queue_spawn.listen();
+                let fut_defer = self.queue_defer.listen();
                 let fut_tick = async {
                     lua_exec.tick().await;
                     // Do as much work as possible
@@ -200,29 +200,32 @@ impl<'lua> Runtime<'lua> {
 
                 // If a new thread was spawned onto any queue,
                 // we must drain them and schedule on the executor
-                if self.queue_spawn.has_threads() || self.queue_defer.has_threads() {
-                    let mut queued_threads = Vec::new();
-                    queued_threads.extend(self.queue_spawn.drain(self.lua).await);
-                    queued_threads.extend(self.queue_defer.drain(self.lua).await);
-                    for (thread, args) in queued_threads {
-                        // NOTE: Thread may have been cancelled from lua
-                        // before we got here, so we need to check it again
-                        if thread.status() == LuaThreadStatus::Resumable {
-                            let mut stream = thread.clone().into_async::<_, LuaValue>(args);
-                            lua_exec
-                                .spawn(async move {
-                                    // Only run stream until first coroutine.yield or completion. We will
-                                    // drop it right away to clear stack space since detached tasks dont drop
-                                    // until the executor drops https://github.com/smol-rs/smol/issues/294
-                                    let res = stream.next().await.unwrap();
-                                    if let Err(e) = &res {
-                                        self.error_callback.call(e);
-                                    }
-                                    // TODO: Figure out how to give this result to caller of spawn_thread/defer_thread
-                                })
-                                .detach();
-                        }
+                let process_thread = |thread: LuaThread<'lua>, args| {
+                    // NOTE: Thread may have been cancelled from lua
+                    // before we got here, so we need to check it again
+                    if thread.status() == LuaThreadStatus::Resumable {
+                        let mut stream = thread.clone().into_async::<_, LuaValue>(args);
+                        lua_exec
+                            .spawn(async move {
+                                // Only run stream until first coroutine.yield or completion. We will
+                                // drop it right away to clear stack space since detached tasks dont drop
+                                // until the executor drops https://github.com/smol-rs/smol/issues/294
+                                let res = stream.next().await.unwrap();
+                                if let Err(e) = &res {
+                                    self.error_callback.call(e);
+                                }
+                                // TODO: Figure out how to give this result to caller of spawn_thread/defer_thread
+                            })
+                            .detach();
                     }
+                };
+
+                // Process spawned threads first, then deferred threads
+                for (thread, args) in self.queue_spawn.drain(self.lua) {
+                    process_thread(thread, args);
+                }
+                for (thread, args) in self.queue_defer.drain(self.lua) {
+                    process_thread(thread, args);
                 }
 
                 // Empty executor = no remaining threads

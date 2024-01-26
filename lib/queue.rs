@@ -1,13 +1,8 @@
-use std::sync::{
-    atomic::{AtomicBool, Ordering},
-    Arc,
-};
+use std::sync::Arc;
 
+use concurrent_queue::ConcurrentQueue;
 use mlua::prelude::*;
-use smol::{
-    channel::{unbounded, Receiver, Sender},
-    lock::Mutex,
-};
+use smol::channel::{unbounded, Receiver, Sender};
 
 use crate::IntoLuaThread;
 
@@ -21,25 +16,20 @@ const ERR_OOM: &str = "out of memory";
 */
 #[derive(Debug, Clone)]
 pub struct ThreadQueue {
-    queue: Arc<Mutex<Vec<ThreadWithArgs>>>,
-    status: Arc<AtomicBool>,
+    queue: Arc<ConcurrentQueue<ThreadWithArgs>>,
     signal_tx: Sender<()>,
     signal_rx: Receiver<()>,
 }
 
 impl ThreadQueue {
     pub fn new() -> Self {
+        let queue = Arc::new(ConcurrentQueue::unbounded());
         let (signal_tx, signal_rx) = unbounded();
         Self {
-            queue: Arc::new(Mutex::new(Vec::new())),
-            status: Arc::new(AtomicBool::new(false)),
+            queue,
             signal_tx,
             signal_rx,
         }
-    }
-
-    pub fn has_threads(&self) -> bool {
-        self.status.load(Ordering::SeqCst)
     }
 
     pub fn push<'lua>(
@@ -52,21 +42,23 @@ impl ThreadQueue {
         let args = args.into_lua_multi(lua)?;
         let stored = ThreadWithArgs::new(lua, thread, args);
 
-        self.queue.lock_blocking().push(stored);
-        self.status.store(true, Ordering::SeqCst);
+        self.queue.push(stored).unwrap();
         self.signal_tx.try_send(()).unwrap();
 
         Ok(())
     }
 
-    pub async fn drain<'lua>(&self, lua: &'lua Lua) -> Vec<(LuaThread<'lua>, LuaMultiValue<'lua>)> {
-        let mut queue = self.queue.lock().await;
-        let drained = queue.drain(..).map(|s| s.into_inner(lua)).collect();
-        self.status.store(false, Ordering::SeqCst);
-        drained
+    pub fn drain<'outer, 'lua>(
+        &'outer self,
+        lua: &'lua Lua,
+    ) -> impl Iterator<Item = (LuaThread<'lua>, LuaMultiValue<'lua>)> + 'outer
+    where
+        'lua: 'outer,
+    {
+        self.queue.try_iter().map(|stored| stored.into_inner(lua))
     }
 
-    pub async fn recv(&self) {
+    pub async fn listen(&self) {
         self.signal_rx.recv().await.unwrap();
         // Drain any pending receives
         loop {

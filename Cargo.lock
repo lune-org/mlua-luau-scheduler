@@ -517,6 +517,7 @@ dependencies = [
 name = "smol-mlua"
 version = "0.0.0"
 dependencies = [
+ "concurrent-queue",
  "mlua",
  "smol",
 ]
