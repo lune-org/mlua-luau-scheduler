@@ -317,9 +317,9 @@ checksum = "01cda141df6706de531b6c46c3a33ecca755538219bd484262fa09410c13539c"
 
 [[package]]
 name = "luau0-src"
-version = "0.7.11+luau606"
+version = "0.8.0+luau609"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "07ffc4945ee953a33cb2b331e00b19e11275fc105c8ac8a977c810597d790f08"
+checksum = "c581e2f71ce092ff3d1c8e206bb7b9dc415e28d64e8fbe2d320ca4f35cc0f054"
 dependencies = [
  "cc",
 ]
@@ -332,9 +332,9 @@ checksum = "523dc4f511e55ab87b694dc30d0f820d60906ef06413f93d4d7a1385599cc149"
 
 [[package]]
 name = "mlua"
-version = "0.9.4"
+version = "0.9.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "069264935e816c85884b99e88c8b408d6d92e40ae8760f726c983526a53546b5"
+checksum = "1d3561f79659ff3afad7b25e2bf2ec21507fe601ebecb7f81088669ec4bfd51e"
 dependencies = [
  "bstr",
  "futures-util",
@@ -347,9 +347,9 @@ dependencies = [
 
 [[package]]
 name = "mlua-sys"
-version = "0.5.0"
+version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4655631a02e3739d014951291ecfa08db49c4da3f7f8c6f3931ed236af5dd78e"
+checksum = "2847b42764435201d8cbee1f517edb79c4cca4181877b90047587c89e1b7bce4"
 dependencies = [
  "cc",
  "cfg-if",
@@ -403,9 +403,9 @@ dependencies = [
 
 [[package]]
 name = "pkg-config"
-version = "0.3.28"
+version = "0.3.29"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "69d3587f8a9e599cc7ec2c00e331f71c4e69a5f9a4b8a6efd5b07466b9736f9a"
+checksum = "2900ede94e305130c13ddd391e0ab7cbaeb783945ae07a279c268cb05109c6cb"
 
 [[package]]
 name = "polling"
@@ -423,9 +423,9 @@ dependencies = [
 
 [[package]]
 name = "proc-macro2"
-version = "1.0.76"
+version = "1.0.78"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "95fc56cda0b5c3325f5fbbd7ff9fda9e02bb00bb3dac51252d2f1bfa1cb8cc8c"
+checksum = "e2422ad645d89c99f8f3e6b88a9fdeca7fabeac836b1002371c4367c8f984aae"
 dependencies = [
  "unicode-ident",
 ]
