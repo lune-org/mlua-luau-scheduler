@@ -68,6 +68,13 @@ impl ThreadQueue {
 
     pub async fn recv(&self) {
         self.signal_rx.recv().await.unwrap();
+        // Drain any pending receives
+        loop {
+            match self.signal_rx.try_recv() {
+                Ok(_) => continue,
+                Err(_) => break,
+            }
+        }
     }
 }
 
