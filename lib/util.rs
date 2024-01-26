@@ -1,41 +1,4 @@
-use std::cell::OnceCell;
-
 use mlua::prelude::*;
-
-use crate::IntoLuaThread;
-
-thread_local! {
-    static POLL_PENDING: OnceCell<LuaLightUserData> = OnceCell::new();
-}
-
-fn get_poll_pending(lua: &Lua) -> LuaResult<LuaLightUserData> {
-    let yielder_fn = lua.create_async_function(|_, ()| async move {
-        smol::future::yield_now().await;
-        Ok(())
-    })?;
-
-    yielder_fn
-        .into_lua_thread(lua)?
-        .resume::<_, LuaLightUserData>(())
-}
-
-#[inline]
-pub(crate) fn is_poll_pending(value: &LuaValue) -> bool {
-    // TODO: Replace with Lua::poll_pending() when it's available
-
-    let pp = POLL_PENDING.with(|cell| {
-        *cell.get_or_init(|| {
-            let lua = Lua::new().into_static();
-            let pending = get_poll_pending(lua).unwrap();
-            // SAFETY: We only use the Lua state for the lifetime of this function,
-            // and the "poll pending" light userdata / pointer is completely static.
-            drop(unsafe { Lua::from_static(lua) });
-            pending
-        })
-    });
-
-    matches!(value, LuaValue::LightUserData(u) if u == &pp)
-}
 
 /**
     Wrapper struct to accept either a Lua thread or a Lua function as function argument.

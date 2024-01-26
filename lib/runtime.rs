@@ -6,10 +6,8 @@ use smol::prelude::*;
 use smol::{block_on, Executor, LocalExecutor};
 
 use super::{
-    error_callback::ThreadErrorCallback,
-    queue::ThreadQueue,
-    traits::IntoLuaThread,
-    util::{is_poll_pending, LuaThreadOrFunction},
+    error_callback::ThreadErrorCallback, queue::ThreadQueue, traits::IntoLuaThread,
+    util::LuaThreadOrFunction,
 };
 
 pub struct Runtime<'lua> {
@@ -112,7 +110,10 @@ impl<'lua> Runtime<'lua> {
                     // and only if we get the pending value back we can spawn to async executor
                     match thread.resume::<_, LuaValue>(args.clone()) {
                         Ok(v) => {
-                            if is_poll_pending(&v) {
+                            if v.as_light_userdata()
+                                .map(|l| l == Lua::poll_pending())
+                                .unwrap_or_default()
+                            {
                                 spawn_queue.push(lua, &thread, args)?;
                             }
                         }
