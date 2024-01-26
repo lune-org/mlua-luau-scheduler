@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 
 use mlua::prelude::*;
 use smol::prelude::*;
@@ -218,6 +218,9 @@ impl<'lua> Runtime<'lua> {
         };
 
         main_exec.run(fut).await;
+
+        // Make sure we don't leave any references behind
+        self.lua.remove_app_data::<Weak<Executor>>();
     }
 
     /**
