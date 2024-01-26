@@ -22,12 +22,6 @@ impl ThreadErrorCallback {
         }
     }
 
-    pub fn new_default() -> Self {
-        let this = Self::new();
-        this.replace(default_error_callback);
-        this
-    }
-
     pub fn replace(&self, callback: impl Fn(LuaError) + Send + 'static) {
         self.exists.store(true, Ordering::Relaxed);
         self.inner.lock_blocking().replace(Box::new(callback));
@@ -49,4 +43,12 @@ impl ThreadErrorCallback {
 
 fn default_error_callback(e: LuaError) {
     eprintln!("{e}");
+}
+
+impl Default for ThreadErrorCallback {
+    fn default() -> Self {
+        let this = Self::new();
+        this.replace(default_error_callback);
+        this
+    }
 }

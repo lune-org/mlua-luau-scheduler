@@ -28,7 +28,7 @@ impl<'lua> Runtime<'lua> {
     pub fn new(lua: &'lua Lua) -> LuaResult<Runtime<'lua>> {
         let queue_spawn = ThreadQueue::new();
         let queue_defer = ThreadQueue::new();
-        let error_callback = ThreadErrorCallback::new_default();
+        let error_callback = ThreadErrorCallback::default();
 
         Ok(Runtime {
             lua,
