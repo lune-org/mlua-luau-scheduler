@@ -1,10 +1,9 @@
 use std::sync::{Arc, Weak};
-use std::time::Duration;
 
+use futures_lite::prelude::*;
 use mlua::prelude::*;
-use smol::{prelude::*, Timer};
 
-use smol::{block_on, Executor, LocalExecutor};
+use async_executor::{Executor, LocalExecutor};
 
 use super::{
     error_callback::ThreadErrorCallback, queue::ThreadQueue, traits::IntoLuaThread,
@@ -142,54 +141,57 @@ impl<'lua> Runtime<'lua> {
         Runs the runtime until all Lua threads have completed.
 
         Note that the given Lua state must be the same one that was
-        used to create this runtime, otherwise this method may panic.
+        used to create this runtime, otherwise this method will panic.
     */
-    pub async fn run_async(&self) {
-        // Make sure we do not already have an executor - this is a definite user error
-        // and may happen if the user tries to run multiple runtimes on the same lua state
-        if self.lua.app_data_ref::<Weak<Executor>>().is_some() {
-            panic!(
-                "Lua state already has an executor attached!\
-                \nOnly one runtime can be used per lua state."
-            );
-        }
+    pub async fn run(&self) {
+        /*
+            Create new executors to use - note that we do not need create multiple executors
+            for work stealing, the user may do that themselves if they want to and it will work
+            just fine, as long as anything async is .await-ed from within a lua async function.
 
-        // Create new executors to use - note that we do not need to create multiple executors
-        // for work stealing, using the `spawn` global function that smol provides will work
-        // just fine, as long as anything spawned by it is awaited from lua async functions
+            The main purpose of the two executors here is just to have one with
+            the Send bound, and another (local) one without it, for lua scheduling.
+
+            We also use the main executor to drive the main loop below forward,
+            saving a tiny bit of processing from going on the lua executor itself.
+        */
         let lua_exec = LocalExecutor::new();
         let main_exec = Arc::new(Executor::new());
 
-        // Store the main executor in lua for spawner trait
+        /*
+            Store the main executor in lua, so that it may be used with LuaSpawnExt.
+
+            Also ensure we do not already have an executor - this is a definite user error
+            and may happen if the user tries to run multiple runtimes on the same lua state.
+        */
+        if self.lua.app_data_ref::<Weak<Executor>>().is_some() {
+            panic!(
+                "Lua state already has an executor attached!\
+                \nThis may be caused by running multiple runtimes on the same lua state, or a call to Runtime::run being cancelled.\
+                \nOnly one runtime can be used per lua state at once, and runtimes must always run until completion."
+            );
+        }
         self.lua.set_app_data(Arc::downgrade(&main_exec));
 
-        // Create a timer for a resumption cycle / throttling mechanism, waiting on this
-        // will allow us to batch more work together when the runtime is under high load,
-        // and adds an acceptable amount of latency for new async tasks (we run at 250hz)
-        let mut cycle = Timer::interval(Duration::from_millis(4));
+        /*
+            Manually tick the lua executor, while running under the main executor.
+            Each tick we wait for the next action to perform, in prioritized order:
 
-        // Tick local lua executor while also driving main
-        // executor forward, until all lua threads finish
+            1. A lua thread is available to run on the spawned queue
+            2. A lua thread is available to run on the deferred queue
+            3. Task(s) scheduled on the lua executor have made progress and should be polled again
+
+            This ordering is vital to ensure that we don't accidentally exit the main loop
+            when there are new lua threads to enqueue and potentially more work to be done.
+        */
         let fut = async {
             loop {
-                // Wait for a new thread to arrive __or__ next futures step, prioritizing
-                // new threads, so we don't accidentally exit when there is more work to do
-                let fut_spawn = self.queue_spawn.wait_for_item();
-                let fut_defer = self.queue_defer.wait_for_item();
-                let fut_tick = async {
-                    lua_exec.tick().await;
-                    // Do as much work as possible
-                    loop {
-                        if !lua_exec.try_tick() {
-                            break;
-                        }
-                    }
-                };
+                let fut_spawn = self.queue_spawn.wait_for_item(); // 1
+                let fut_defer = self.queue_defer.wait_for_item(); // 2
+                let fut_tick = lua_exec.tick(); // 3
 
                 fut_spawn.or(fut_defer).or(fut_tick).await;
 
-                // If a new thread was spawned onto any queue,
-                // we must drain them and schedule on the executor
                 let process_thread = |thread: LuaThread<'lua>, args| {
                     // NOTE: Thread may have been cancelled from lua
                     // before we got here, so we need to check it again
@@ -199,12 +201,11 @@ impl<'lua> Runtime<'lua> {
                             .spawn(async move {
                                 // Only run stream until first coroutine.yield or completion. We will
                                 // drop it right away to clear stack space since detached tasks dont drop
-                                // until the executor drops https://github.com/smol-rs/smol/issues/294
+                                // until the executor drops (https://github.com/smol-rs/smol/issues/294)
                                 let res = stream.next().await.unwrap();
                                 if let Err(e) = &res {
                                     self.error_callback.call(e);
                                 }
-                                // TODO: Figure out how to give this result to caller of spawn_thread/defer_thread
                             })
                             .detach();
                     }
@@ -218,28 +219,17 @@ impl<'lua> Runtime<'lua> {
                     process_thread(thread, args);
                 }
 
-                // Empty executor = no remaining threads
+                // Empty executor = we didn't spawn any new lua tasks
+                // above, and there are no remaining tasks to run later
                 if lua_exec.is_empty() {
                     break;
                 }
-
-                // Wait for next resumption cycle
-                cycle.next().await;
             }
         };
 
         main_exec.run(fut).await;
 
-        // Make sure we don't leave any references behind
+        // Clean up
         self.lua.remove_app_data::<Weak<Executor>>();
-    }
-
-    /**
-        Runs the runtime until all Lua threads have completed, blocking the thread.
-
-        See [`ThreadRuntime::run_async`] for more info.
-    */
-    pub fn run_blocking(&self) {
-        block_on(self.run_async())
     }
 }

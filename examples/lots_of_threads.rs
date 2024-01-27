@@ -1,8 +1,9 @@
 use std::time::Duration;
 
+use async_io::{block_on, Timer};
+
 use mlua::prelude::*;
-use smol::Timer;
-use smol_mlua::Runtime;
+use mlua_luau_runtime::*;
 
 const MAIN_SCRIPT: &str = include_str!("./lua/lots_of_threads.luau");
 
@@ -30,10 +31,12 @@ pub fn main() -> LuaResult<()> {
         })?,
     )?;
 
-    // Load the main script into the runtime and run it until completion
+    // Load the main script into the runtime
     let main = lua.load(MAIN_SCRIPT);
     rt.spawn_thread(main, ())?;
-    rt.run_blocking();
+
+    // Run until completion
+    block_on(rt.run());
 
     Ok(())
 }

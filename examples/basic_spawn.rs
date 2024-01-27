@@ -1,6 +1,10 @@
+use std::io::ErrorKind;
+
+use async_fs::read_to_string;
+use async_io::block_on;
+
 use mlua::prelude::*;
-use smol::{fs::read_to_string, io};
-use smol_mlua::{LuaSpawnExt, Runtime};
+use mlua_luau_runtime::*;
 
 const MAIN_SCRIPT: &str = include_str!("./lua/basic_spawn.luau");
 
@@ -14,7 +18,7 @@ pub fn main() -> LuaResult<()> {
             let task = lua.spawn(async move {
                 match read_to_string(path).await {
                     Ok(s) => Ok(Some(s)),
-                    Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(None),
+                    Err(e) if e.kind() == ErrorKind::NotFound => Ok(None),
                     Err(e) => Err(e),
                 }
             });
@@ -22,11 +26,13 @@ pub fn main() -> LuaResult<()> {
         })?,
     )?;
 
-    // Load the main script into a runtime and run it until completion
+    // Load the main script into a runtime
     let rt = Runtime::new(&lua)?;
     let main = lua.load(MAIN_SCRIPT);
     rt.spawn_thread(main, ())?;
-    rt.run_blocking();
+
+    // Run until completion
+    block_on(rt.run());
 
     Ok(())
 }

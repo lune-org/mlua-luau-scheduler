@@ -1,7 +1,8 @@
 use std::{future::Future, sync::Weak};
 
 use mlua::prelude::*;
-use smol::{Executor, Task};
+
+use async_executor::{Executor, Task};
 
 /**
     Trait for any struct that can be turned into an [`LuaThread`]
@@ -62,8 +63,10 @@ pub trait LuaSpawnExt<'lua> {
         ### Example usage
 
         ```rust
+        use async_io::block_on;
+
         use mlua::prelude::*;
-        use smol_mlua::{Runtime, LuaSpawnExt};
+        use mlua_luau_runtime::*;
 
         fn main() -> LuaResult<()> {
             let lua = Lua::new();
@@ -80,7 +83,7 @@ pub trait LuaSpawnExt<'lua> {
 
             let rt = Runtime::new(&lua)?;
             rt.spawn_thread(lua.load("spawnBackgroundTask()"), ());
-            rt.run_blocking();
+            block_on(rt.run());
 
             Ok(())
         }

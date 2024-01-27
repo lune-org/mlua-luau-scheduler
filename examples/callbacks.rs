@@ -1,5 +1,7 @@
 use mlua::prelude::*;
-use smol_mlua::Runtime;
+use mlua_luau_runtime::*;
+
+use async_io::block_on;
 
 const MAIN_SCRIPT: &str = include_str!("./lua/callbacks.luau");
 
@@ -17,10 +19,12 @@ pub fn main() -> LuaResult<()> {
         );
     });
 
-    // Load and run the main script until completion
+    // Load the main script into a runtime
     let main = lua.load(MAIN_SCRIPT);
     rt.spawn_thread(main, ())?;
-    rt.run_blocking();
+
+    // Run until completion
+    block_on(rt.run());
 
     Ok(())
 }

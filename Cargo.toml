@@ -1,16 +1,27 @@
 [package]
-name = "smol-mlua"
+name = "mlua-luau-runtime"
 version = "0.0.0"
 edition = "2021"
 
-[dependencies]
-concurrent-queue = "2.4"
-event-listener = "4.0"
-smol = "2.0"
-mlua = { version = "0.9", features = ["luau", "luau-jit", "async"] }
-
 [lib]
 path = "lib/lib.rs"
+
+[dependencies]
+async-executor = "1.8"
+concurrent-queue = "2.4"
+event-listener = "4.0"
+futures-lite = "2.2"
+
+mlua = { version = "0.9.5", features = [
+    "luau",
+    "luau-jit",
+    "async",
+    "serialize",
+] }
+
+[dev-dependencies]
+async-fs = "2.1"
+async-io = "2.3"
 
 [[example]]
 name = "basic_sleep"

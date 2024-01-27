@@ -1,25 +1,22 @@
 <!-- markdownlint-disable MD033 -->
 <!-- markdownlint-disable MD041 -->
 
-<h1 align="center">smol-mlua</h1>
+<h1 align="center">mlua-luau-runtime</h1>
 
 <div align="center">
 	<div>
-		<a href="https://github.com/lune-org/smol-mlua/actions">
-			<img src="https://shields.io/endpoint?url=https://badges.readysetplay.io/workflow/lune-org/smol-mlua/ci.yaml" alt="CI status" />
+		<a href="https://github.com/lune-org/mlua-luau-runtime/actions">
+			<img src="https://shields.io/endpoint?url=https://badges.readysetplay.io/workflow/lune-org/mlua-luau-runtime/ci.yaml" alt="CI status" />
 		</a>
-		<a href="https://github.com/lune-org/smol-mlua/blob/main/LICENSE.txt">
-			<img src="https://img.shields.io/github/license/lune-org/smol-mlua.svg?label=License&color=informational" alt="Crate license" />
+		<a href="https://github.com/lune-org/mlua-luau-runtime/blob/main/LICENSE.txt">
+			<img src="https://img.shields.io/github/license/lune-org/mlua-luau-runtime.svg?label=License&color=informational" alt="Crate license" />
 		</a>
 	</div>
 </div>
 
 <br/>
 
-Integration between [smol] and [mlua] that provides a fully functional and asynchronous Luau runtime using smol executor(s).
-
-[smol]: https://crates.io/crates/smol
-[mlua]: https://crates.io/crates/mlua
+Luau-based async runtime for [`mlua`](https://crates.io/crates/mlua), built on top of [`async-executor`](https://crates.io/crates/async-executor).
 
 ## Example Usage
 
@@ -27,10 +24,13 @@ Integration between [smol] and [mlua] that provides a fully functional and async
 
 ```rs
 use std::time::{Duration, Instant};
+use std::io::ErrorKind;
+
+use async_io::{block_on, Timer};
+use async_fs::read_to_string;
 
 use mlua::prelude::*;
-use smol::{Timer, io, fs::read_to_string}
-use smol_mlua::Runtime;
+use mlua_luau_runtime::*;
 ```
 
 ### 2. Set up lua environment
@@ -55,7 +55,7 @@ lua.globals().set(
         let task = lua.spawn(async move {
             match read_to_string(path).await {
                 Ok(s) => Ok(Some(s)),
-                Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(None),
+                Err(e) if e.kind() == ErrorKind::NotFound => Ok(None),
                 Err(e) => Err(e),
             }
         });
@@ -64,7 +64,7 @@ lua.globals().set(
 )?;
 ```
 
-### 3. Run
+### 3. Set up runtime, run threads
 
 ```rs
 let rt = Runtime::new(&lua)?;
@@ -77,7 +77,6 @@ let fileThread = lua.load("readFile(\"Cargo.toml\")");
 rt.spawn_thread(sleepThread, ());
 rt.spawn_thread(fileThread, ());
 
-// ... and run either async or blocking, until they finish
-rt.run_async().await;
-rt.run_blocking();
+// ... and run until they finish
+block_on(rt.run());
 ```
