@@ -8,7 +8,7 @@ use mlua_luau_runtime::*;
 const MAIN_SCRIPT: &str = include_str!("./lua/basic_sleep.luau");
 
 pub fn main() -> LuaResult<()> {
-    // Set up persistent lua environment
+    // Set up persistent Lua environment
     let lua = Lua::new();
     lua.globals().set(
         "sleep",

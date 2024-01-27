@@ -9,12 +9,12 @@ use mlua_luau_runtime::*;
 const MAIN_SCRIPT: &str = include_str!("./lua/basic_spawn.luau");
 
 pub fn main() -> LuaResult<()> {
-    // Set up persistent lua environment
+    // Set up persistent Lua environment
     let lua = Lua::new();
     lua.globals().set(
         "readFile",
         lua.create_async_function(|lua, path: String| async move {
-            // Spawn background task that does not take up resources on the lua thread
+            // Spawn background task that does not take up resources on the Lua thread
             let task = lua.spawn(async move {
                 match read_to_string(path).await {
                     Ok(s) => Ok(Some(s)),

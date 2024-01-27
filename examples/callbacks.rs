@@ -6,7 +6,7 @@ use async_io::block_on;
 const MAIN_SCRIPT: &str = include_str!("./lua/callbacks.luau");
 
 pub fn main() -> LuaResult<()> {
-    // Set up persistent lua environment
+    // Set up persistent Lua environment
     let lua = Lua::new();
 
     // Create a new runtime with custom callbacks

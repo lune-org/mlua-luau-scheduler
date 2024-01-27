@@ -10,14 +10,8 @@ const MAIN_SCRIPT: &str = include_str!("./lua/lots_of_threads.luau");
 const ONE_NANOSECOND: Duration = Duration::from_nanos(1);
 
 pub fn main() -> LuaResult<()> {
-    // Set up persistent lua environment, note that we enable thread reuse for
-    // mlua's internal async handling since we will be spawning lots of threads
-    let lua = Lua::new_with(
-        LuaStdLib::ALL,
-        LuaOptions::new()
-            .catch_rust_panics(false)
-            .thread_pool_size(10_000),
-    )?;
+    // Set up persistent Lua environment
+    let lua = Lua::new();
     let rt = Runtime::new(&lua)?;
 
     lua.globals().set("spawn", rt.create_spawn_function()?)?;

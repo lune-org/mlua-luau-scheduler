@@ -33,7 +33,7 @@ use mlua::prelude::*;
 use mlua_luau_runtime::*;
 ```
 
-### 2. Set up lua environment
+### 2. Set up Lua environment
 
 ```rs
 let lua = Lua::new();
