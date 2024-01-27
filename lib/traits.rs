@@ -85,7 +85,7 @@ pub trait LuaSpawnExt<'lua> {
                 })?
             )?;
 
-            let rt = Runtime::new(&lua)?;
+            let rt = Runtime::new(&lua);
             rt.spawn_thread(lua.load("spawnBackgroundTask()"), ());
             block_on(rt.run());
 
