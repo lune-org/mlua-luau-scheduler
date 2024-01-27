@@ -23,17 +23,18 @@ impl<'lua> Runtime<'lua> {
 
         This runtime will have a default error callback that prints errors to stderr.
     */
-    pub fn new(lua: &'lua Lua) -> LuaResult<Runtime<'lua>> {
+    #[must_use]
+    pub fn new(lua: &'lua Lua) -> Runtime<'lua> {
         let queue_spawn = ThreadQueue::new();
         let queue_defer = ThreadQueue::new();
         let error_callback = ThreadErrorCallback::default();
 
-        Ok(Runtime {
+        Runtime {
             lua,
             queue_spawn,
             queue_defer,
             error_callback,
-        })
+        }
     }
 
     /**
@@ -60,6 +61,10 @@ impl<'lua> Runtime<'lua> {
         Spawns a chunk / function / thread onto the runtime queue.
 
         Threads are guaranteed to be resumed in the order that they were pushed to the queue.
+
+        # Errors
+
+        Errors when out of memory.
     */
     pub fn spawn_thread(
         &self,
@@ -75,6 +80,10 @@ impl<'lua> Runtime<'lua> {
         Deferred threads are guaranteed to run after all spawned threads either yield or complete.
 
         Threads are guaranteed to be resumed in the order that they were pushed to the queue.
+
+        # Errors
+
+        Errors when out of memory.
     */
     pub fn defer_thread(
         &self,
@@ -88,6 +97,10 @@ impl<'lua> Runtime<'lua> {
         Creates a Lua function that can be used to spawn threads / functions onto the runtime queue.
 
         The function takes a thread or function as the first argument, and any variadic arguments as the rest.
+
+        # Errors
+
+        Errors when out of memory.
     */
     pub fn create_spawn_function(&self) -> LuaResult<LuaFunction<'lua>> {
         let error_callback = self.error_callback.clone();
@@ -123,6 +136,10 @@ impl<'lua> Runtime<'lua> {
         The function takes a thread or function as the first argument, and any variadic arguments as the rest.
 
         Deferred threads are guaranteed to run after all spawned threads either yield or complete.
+
+        # Errors
+
+        Errors when out of memory.
     */
     pub fn create_defer_function(&self) -> LuaResult<LuaFunction<'lua>> {
         let defer_queue = self.queue_defer.clone();
@@ -142,6 +159,10 @@ impl<'lua> Runtime<'lua> {
 
         Note that the given Lua state must be the same one that was
         used to create this runtime, otherwise this method will panic.
+
+        # Panics
+
+        Panics if the given Lua state already has a runtime attached to it.
     */
     pub async fn run(&self) {
         /*
@@ -164,13 +185,14 @@ impl<'lua> Runtime<'lua> {
             Also ensure we do not already have an executor - this is a definite user error
             and may happen if the user tries to run multiple runtimes on the same Lua state.
         */
-        if self.lua.app_data_ref::<Weak<Executor>>().is_some() {
-            panic!(
-                "Lua state already has an executor attached!\
-                \nThis may be caused by running multiple runtimes on the same lua state, or a call to Runtime::run being cancelled.\
-                \nOnly one runtime can be used per lua state at once, and runtimes must always run until completion."
-            );
-        }
+        assert!(
+            self.lua.app_data_ref::<Weak<Executor>>().is_none(),
+            "\
+            Lua state already has an executor attached!\
+            \nThis may be caused by running multiple runtimes on the same Lua state, or a call to Runtime::run being cancelled.\
+            \nOnly one runtime can be used per Lua state at once, and runtimes must always run until completion.\
+            "
+        );
         self.lua.set_app_data(Arc::downgrade(&main_exec));
 
         /*

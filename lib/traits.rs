@@ -15,6 +15,10 @@ use async_executor::{Executor, Task};
 pub trait IntoLuaThread<'lua> {
     /**
         Converts the value into a Lua thread.
+
+        # Errors
+
+        Errors when out of memory.
     */
     fn into_lua_thread(self, lua: &'lua Lua) -> LuaResult<LuaThread<'lua>>;
 }

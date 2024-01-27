@@ -1,16 +1,18 @@
+#![allow(clippy::missing_errors_doc)]
+
 use std::time::{Duration, Instant};
 
 use async_io::{block_on, Timer};
 
 use mlua::prelude::*;
-use mlua_luau_runtime::*;
+use mlua_luau_runtime::Runtime;
 
 const MAIN_SCRIPT: &str = include_str!("./lua/scheduler_ordering.luau");
 
 pub fn main() -> LuaResult<()> {
     // Set up persistent Lua environment
     let lua = Lua::new();
-    let rt = Runtime::new(&lua)?;
+    let rt = Runtime::new(&lua);
 
     lua.globals().set("spawn", rt.create_spawn_function()?)?;
     lua.globals().set("defer", rt.create_defer_function()?)?;

@@ -2,9 +2,12 @@
 name = "mlua-luau-runtime"
 version = "0.0.0"
 edition = "2021"
-
-[lib]
-path = "lib/lib.rs"
+license = "MPL-2.0"
+repository = "https://github.com/lune-org/mlua-luau-runtime"
+description = "Luau-based async runtime, using mlua and async-executor"
+readme = "README.md"
+keywords = ["async", "luau", "runtime"]
+categories = ["async"]
 
 [dependencies]
 async-executor = "1.8"
@@ -22,6 +25,14 @@ mlua = { version = "0.9.5", features = [
 [dev-dependencies]
 async-fs = "2.1"
 async-io = "2.3"
+
+[lints.clippy]
+all = { level = "deny", priority = -3 }
+cargo = { level = "warn", priority = -2 }
+pedantic = { level = "warn", priority = -1 }
+
+[lib]
+path = "lib/lib.rs"
 
 [[example]]
 name = "basic_sleep"

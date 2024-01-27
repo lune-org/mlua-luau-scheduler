@@ -31,6 +31,7 @@ impl ThreadErrorCallback {
     }
 }
 
+#[allow(clippy::needless_pass_by_value)]
 fn default_error_callback(e: LuaError) {
     eprintln!("{e}");
 }

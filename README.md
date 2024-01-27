@@ -16,7 +16,7 @@
 
 <br/>
 
-Luau-based async runtime for [`mlua`](https://crates.io/crates/mlua), built on top of [`async-executor`](https://crates.io/crates/async-executor).
+Luau-based async runtime, using [`mlua`](https://crates.io/crates/mlua) and [`async-executor`](https://crates.io/crates/async-executor).
 
 ## Example Usage
 

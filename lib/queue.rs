@@ -6,8 +6,6 @@ use mlua::prelude::*;
 
 use crate::IntoLuaThread;
 
-const ERR_OOM: &str = "out of memory";
-
 /**
     Queue for storing [`LuaThread`]s with associated arguments.
 
@@ -15,7 +13,7 @@ const ERR_OOM: &str = "out of memory";
     well as listening for new items being pushed to the queue.
 */
 #[derive(Debug, Clone)]
-pub struct ThreadQueue {
+pub(crate) struct ThreadQueue {
     queue: Arc<ConcurrentQueue<ThreadWithArgs>>,
     event: Arc<Event>,
 }
@@ -35,9 +33,9 @@ impl ThreadQueue {
     ) -> LuaResult<()> {
         let thread = thread.into_lua_thread(lua)?;
         let args = args.into_lua_multi(lua)?;
-        let stored = ThreadWithArgs::new(lua, thread, args);
+        let stored = ThreadWithArgs::new(lua, thread, args)?;
 
-        self.queue.push(stored).unwrap();
+        self.queue.push(stored).into_lua_err()?;
         self.event.notify(usize::MAX);
 
         Ok(())
@@ -61,7 +59,7 @@ impl ThreadQueue {
 }
 
 /**
-    Representation of a [`LuaThread`] with associated arguments currently stored in the Lua registry.
+    Representation of a [`LuaThread`] with its associated arguments currently stored in the Lua registry.
 */
 #[derive(Debug)]
 struct ThreadWithArgs {
@@ -70,19 +68,23 @@ struct ThreadWithArgs {
 }
 
 impl ThreadWithArgs {
-    pub fn new<'lua>(lua: &'lua Lua, thread: LuaThread<'lua>, args: LuaMultiValue<'lua>) -> Self {
+    fn new<'lua>(
+        lua: &'lua Lua,
+        thread: LuaThread<'lua>,
+        args: LuaMultiValue<'lua>,
+    ) -> LuaResult<Self> {
         let argsv = args.into_vec();
 
-        let key_thread = lua.create_registry_value(thread).expect(ERR_OOM);
-        let key_args = lua.create_registry_value(argsv).expect(ERR_OOM);
+        let key_thread = lua.create_registry_value(thread)?;
+        let key_args = lua.create_registry_value(argsv)?;
 
-        Self {
+        Ok(Self {
             key_thread,
             key_args,
-        }
+        })
     }
 
-    pub fn into_inner(self, lua: &Lua) -> (LuaThread<'_>, LuaMultiValue<'_>) {
+    fn into_inner(self, lua: &Lua) -> (LuaThread<'_>, LuaMultiValue<'_>) {
         let thread = lua.registry_value(&self.key_thread).unwrap();
         let argsv = lua.registry_value(&self.key_args).unwrap();
 
