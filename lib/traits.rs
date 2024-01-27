@@ -105,6 +105,7 @@ impl<'lua> LuaSpawnExt<'lua> for Lua {
             .expect("futures can only be spawned within a runtime")
             .upgrade()
             .expect("executor was dropped");
+        tracing::trace!("spawning future on executor");
         exec.spawn(fut)
     }
 }

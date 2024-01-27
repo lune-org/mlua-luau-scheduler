@@ -12,6 +12,8 @@ const MAIN_SCRIPT: &str = include_str!("./lua/lots_of_threads.luau");
 const ONE_NANOSECOND: Duration = Duration::from_nanos(1);
 
 pub fn main() -> LuaResult<()> {
+    tracing_subscriber::fmt::init();
+
     // Set up persistent Lua environment
     let lua = Lua::new();
     let rt = Runtime::new(&lua);

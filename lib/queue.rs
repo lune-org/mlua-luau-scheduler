@@ -33,6 +33,8 @@ impl ThreadQueue {
     ) -> LuaResult<()> {
         let thread = thread.into_lua_thread(lua)?;
         let args = args.into_lua_multi(lua)?;
+
+        tracing::trace!("pushing item to queue with {} args", args.len());
         let stored = ThreadWithArgs::new(lua, thread, args)?;
 
         self.queue.push(stored).into_lua_err()?;

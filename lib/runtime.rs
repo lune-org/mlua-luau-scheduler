@@ -4,6 +4,7 @@ use futures_lite::prelude::*;
 use mlua::prelude::*;
 
 use async_executor::{Executor, LocalExecutor};
+use tracing::Instrument;
 
 use super::{
     error_callback::ThreadErrorCallback, queue::ThreadQueue, traits::IntoLuaThread,
@@ -71,6 +72,7 @@ impl<'lua> Runtime<'lua> {
         thread: impl IntoLuaThread<'lua>,
         args: impl IntoLuaMulti<'lua>,
     ) -> LuaResult<()> {
+        tracing::debug!(deferred = false, "new runtime thread");
         self.queue_spawn.push_item(self.lua, thread, args)
     }
 
@@ -90,6 +92,7 @@ impl<'lua> Runtime<'lua> {
         thread: impl IntoLuaThread<'lua>,
         args: impl IntoLuaMulti<'lua>,
     ) -> LuaResult<()> {
+        tracing::debug!(deferred = true, "new runtime thread");
         self.queue_defer.push_item(self.lua, thread, args)
     }
 
@@ -207,38 +210,65 @@ impl<'lua> Runtime<'lua> {
             when there are new Lua threads to enqueue and potentially more work to be done.
         */
         let fut = async {
+            let process_thread = |thread: LuaThread<'lua>, args| {
+                // NOTE: Thread may have been cancelled from Lua
+                // before we got here, so we need to check it again
+                if thread.status() == LuaThreadStatus::Resumable {
+                    let mut stream = thread.clone().into_async::<_, LuaValue>(args);
+                    lua_exec
+                        .spawn(async move {
+                            // Only run stream until first coroutine.yield or completion. We will
+                            // drop it right away to clear stack space since detached tasks dont drop
+                            // until the executor drops (https://github.com/smol-rs/smol/issues/294)
+                            let res = stream.next().await.unwrap();
+                            if let Err(e) = &res {
+                                self.error_callback.call(e);
+                            }
+                        })
+                        .detach();
+                }
+            };
+
             loop {
                 let fut_spawn = self.queue_spawn.wait_for_item(); // 1
                 let fut_defer = self.queue_defer.wait_for_item(); // 2
-                let fut_tick = lua_exec.tick(); // 3
 
-                fut_spawn.or(fut_defer).or(fut_tick).await;
-
-                let process_thread = |thread: LuaThread<'lua>, args| {
-                    // NOTE: Thread may have been cancelled from Lua
-                    // before we got here, so we need to check it again
-                    if thread.status() == LuaThreadStatus::Resumable {
-                        let mut stream = thread.clone().into_async::<_, LuaValue>(args);
-                        lua_exec
-                            .spawn(async move {
-                                // Only run stream until first coroutine.yield or completion. We will
-                                // drop it right away to clear stack space since detached tasks dont drop
-                                // until the executor drops (https://github.com/smol-rs/smol/issues/294)
-                                let res = stream.next().await.unwrap();
-                                if let Err(e) = &res {
-                                    self.error_callback.call(e);
-                                }
-                            })
-                            .detach();
+                // 3
+                let mut num_processed = 0;
+                let span_tick = tracing::debug_span!("tick_executor");
+                let fut_tick = async {
+                    lua_exec.tick().await;
+                    // NOTE: Try to do as much work as possible instead of just a single tick()
+                    num_processed += 1;
+                    while lua_exec.try_tick() {
+                        num_processed += 1;
                     }
                 };
 
+                // 1 + 2 + 3
+                fut_spawn
+                    .or(fut_defer)
+                    .or(fut_tick.instrument(span_tick.or_current()))
+                    .await;
+
+                // Emit traces
+                if num_processed > 0 {
+                    tracing::trace!(num_processed, "tasks_processed");
+                }
+
                 // Process spawned threads first, then deferred threads
+                let mut num_spawned = 0;
+                let mut num_deferred = 0;
                 for (thread, args) in self.queue_spawn.drain_items(self.lua) {
                     process_thread(thread, args);
+                    num_spawned += 1;
                 }
                 for (thread, args) in self.queue_defer.drain_items(self.lua) {
                     process_thread(thread, args);
+                    num_deferred += 1;
+                }
+                if num_spawned > 0 || num_deferred > 0 {
+                    tracing::trace!(num_spawned, num_deferred, "tasks_spawned");
                 }
 
                 // Empty executor = we didn't spawn any new Lua tasks
@@ -249,7 +279,9 @@ impl<'lua> Runtime<'lua> {
             }
         };
 
-        main_exec.run(fut).await;
+        // Run the executor inside a span until all lua threads complete
+        let span = tracing::debug_span!("run_executor");
+        main_exec.run(fut).instrument(span.or_current()).await;
 
         // Clean up
         self.lua.remove_app_data::<Weak<Executor>>();

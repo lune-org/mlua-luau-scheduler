@@ -8,6 +8,8 @@ use async_io::block_on;
 const MAIN_SCRIPT: &str = include_str!("./lua/callbacks.luau");
 
 pub fn main() -> LuaResult<()> {
+    tracing_subscriber::fmt::init();
+
     // Set up persistent Lua environment
     let lua = Lua::new();
 
