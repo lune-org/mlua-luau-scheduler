@@ -1,4 +1,5 @@
 #![allow(clippy::missing_errors_doc)]
+#![allow(clippy::missing_panics_doc)]
 
 use std::time::{Duration, Instant};
 
@@ -28,12 +29,17 @@ pub fn main() -> LuaResult<()> {
         })?,
     )?;
 
-    // Load the main script into a runtime
+    // Load the main script into the runtime, and keep track of the thread we spawn
     let main = lua.load(MAIN_SCRIPT);
-    rt.spawn_thread(main, ())?;
+    let handle = rt.spawn_thread(main, ())?;
 
     // Run until completion
     block_on(rt.run());
+
+    // We should have gotten proper values back from our script
+    let res = handle.result(&lua).unwrap().unwrap();
+    let nums = Vec::<usize>::from_lua_multi(res, &lua)?;
+    assert_eq!(nums, vec![1, 2, 3, 4, 5, 6]);
 
     Ok(())
 }

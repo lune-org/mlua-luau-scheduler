@@ -1,4 +1,10 @@
-use std::sync::{Arc, Weak};
+#![allow(clippy::module_name_repetitions)]
+
+use std::{
+    cell::Cell,
+    rc::Rc,
+    sync::{Arc, Weak},
+};
 
 use futures_lite::prelude::*;
 use mlua::prelude::*;
@@ -6,16 +12,22 @@ use mlua::prelude::*;
 use async_executor::{Executor, LocalExecutor};
 use tracing::Instrument;
 
+use crate::{status::Status, util::run_until_yield, Handle};
+
 use super::{
     error_callback::ThreadErrorCallback, queue::ThreadQueue, traits::IntoLuaThread,
     util::LuaThreadOrFunction,
 };
 
+/**
+    A runtime for running Lua threads and async tasks.
+*/
 pub struct Runtime<'lua> {
     lua: &'lua Lua,
     queue_spawn: ThreadQueue,
     queue_defer: ThreadQueue,
     error_callback: ThreadErrorCallback,
+    status: Rc<Cell<Status>>,
 }
 
 impl<'lua> Runtime<'lua> {
@@ -29,13 +41,22 @@ impl<'lua> Runtime<'lua> {
         let queue_spawn = ThreadQueue::new();
         let queue_defer = ThreadQueue::new();
         let error_callback = ThreadErrorCallback::default();
-
+        let status = Rc::new(Cell::new(Status::NotStarted));
         Runtime {
             lua,
             queue_spawn,
             queue_defer,
             error_callback,
+            status,
         }
+    }
+
+    /**
+        Returns the current status of this runtime.
+    */
+    #[must_use]
+    pub fn status(&self) -> Status {
+        self.status.get()
     }
 
     /**
@@ -63,6 +84,12 @@ impl<'lua> Runtime<'lua> {
 
         Threads are guaranteed to be resumed in the order that they were pushed to the queue.
 
+        # Returns
+
+        Returns a [`Handle`] that can be used to retrieve the result of the thread.
+
+        Note that the result may not be available until [`Runtime::run`] completes.
+
         # Errors
 
         Errors when out of memory.
@@ -71,9 +98,15 @@ impl<'lua> Runtime<'lua> {
         &self,
         thread: impl IntoLuaThread<'lua>,
         args: impl IntoLuaMulti<'lua>,
-    ) -> LuaResult<()> {
+    ) -> LuaResult<Handle> {
         tracing::debug!(deferred = false, "new runtime thread");
-        self.queue_spawn.push_item(self.lua, thread, args)
+
+        let handle = Handle::new(self.lua, thread, args)?;
+        let handle_thread = handle.create_thread(self.lua)?;
+
+        self.queue_spawn.push_item(self.lua, handle_thread, ())?;
+
+        Ok(handle)
     }
 
     /**
@@ -83,6 +116,12 @@ impl<'lua> Runtime<'lua> {
 
         Threads are guaranteed to be resumed in the order that they were pushed to the queue.
 
+        # Returns
+
+        Returns a [`Handle`] that can be used to retrieve the result of the thread.
+
+        Note that the result may not be available until [`Runtime::run`] completes.
+
         # Errors
 
         Errors when out of memory.
@@ -91,9 +130,15 @@ impl<'lua> Runtime<'lua> {
         &self,
         thread: impl IntoLuaThread<'lua>,
         args: impl IntoLuaMulti<'lua>,
-    ) -> LuaResult<()> {
+    ) -> LuaResult<Handle> {
         tracing::debug!(deferred = true, "new runtime thread");
-        self.queue_defer.push_item(self.lua, thread, args)
+
+        let handle = Handle::new(self.lua, thread, args)?;
+        let handle_thread = handle.create_thread(self.lua)?;
+
+        self.queue_defer.push_item(self.lua, handle_thread, ())?;
+
+        Ok(handle)
     }
 
     /**
@@ -214,15 +259,10 @@ impl<'lua> Runtime<'lua> {
                 // NOTE: Thread may have been cancelled from Lua
                 // before we got here, so we need to check it again
                 if thread.status() == LuaThreadStatus::Resumable {
-                    let mut stream = thread.clone().into_async::<_, LuaValue>(args);
                     lua_exec
                         .spawn(async move {
-                            // Only run stream until first coroutine.yield or completion. We will
-                            // drop it right away to clear stack space since detached tasks dont drop
-                            // until the executor drops (https://github.com/smol-rs/smol/issues/294)
-                            let res = stream.next().await.unwrap();
-                            if let Err(e) = &res {
-                                self.error_callback.call(e);
+                            if let Err(e) = run_until_yield(thread, args).await {
+                                self.error_callback.call(&e);
                             }
                         })
                         .detach();
@@ -280,8 +320,14 @@ impl<'lua> Runtime<'lua> {
         };
 
         // Run the executor inside a span until all lua threads complete
+        self.status.set(Status::Running);
+        tracing::debug!("starting runtime");
+
         let span = tracing::debug_span!("run_executor");
         main_exec.run(fut).instrument(span.or_current()).await;
+
+        tracing::debug!("runtime completed");
+        self.status.set(Status::Completed);
 
         // Clean up
         self.lua.remove_app_data::<Weak<Executor>>();
