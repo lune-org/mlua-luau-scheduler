@@ -12,20 +12,33 @@ use mlua::prelude::*;
 use async_executor::{Executor, LocalExecutor};
 use tracing::Instrument;
 
-use crate::{status::Status, util::run_until_yield, Handle};
-
-use super::{
-    error_callback::ThreadErrorCallback, queue::ThreadQueue, traits::IntoLuaThread,
-    util::LuaThreadOrFunction,
+use crate::{
+    error_callback::ThreadErrorCallback,
+    handle::Handle,
+    queue::{DeferredThreadQueue, SpawnedThreadQueue},
+    status::Status,
+    traits::IntoLuaThread,
+    util::{run_until_yield, LuaThreadOrFunction},
 };
+
+const ERR_METADATA_ALREADY_ATTACHED: &str = "\
+Lua state already has runtime metadata attached!\
+\nThis may be caused by running multiple runtimes on the same Lua state, or a call to Runtime::run being cancelled.\
+\nOnly one runtime can be used per Lua state at once, and runtimes must always run until completion.\
+";
+
+const ERR_METADATA_REMOVED: &str = "\
+Lua state runtime metadata was unexpectedly removed!\
+\nThis should never happen, and is likely a bug in the runtime.\
+";
 
 /**
     A runtime for running Lua threads and async tasks.
 */
 pub struct Runtime<'lua> {
     lua: &'lua Lua,
-    queue_spawn: ThreadQueue,
-    queue_defer: ThreadQueue,
+    queue_spawn: SpawnedThreadQueue,
+    queue_defer: DeferredThreadQueue,
     error_callback: ThreadErrorCallback,
     status: Rc<Cell<Status>>,
 }
@@ -38,8 +51,8 @@ impl<'lua> Runtime<'lua> {
     */
     #[must_use]
     pub fn new(lua: &'lua Lua) -> Runtime<'lua> {
-        let queue_spawn = ThreadQueue::new();
-        let queue_defer = ThreadQueue::new();
+        let queue_spawn = SpawnedThreadQueue::new();
+        let queue_defer = DeferredThreadQueue::new();
         let error_callback = ThreadErrorCallback::default();
         let status = Rc::new(Cell::new(Status::NotStarted));
         Runtime {
@@ -100,13 +113,8 @@ impl<'lua> Runtime<'lua> {
         args: impl IntoLuaMulti<'lua>,
     ) -> LuaResult<Handle> {
         tracing::debug!(deferred = false, "new runtime thread");
-
-        let handle = Handle::new(self.lua, thread, args)?;
-        let handle_thread = handle.create_thread(self.lua)?;
-
-        self.queue_spawn.push_item(self.lua, handle_thread, ())?;
-
-        Ok(handle)
+        self.queue_spawn
+            .push_item_with_handle(self.lua, thread, args)
     }
 
     /**
@@ -132,13 +140,8 @@ impl<'lua> Runtime<'lua> {
         args: impl IntoLuaMulti<'lua>,
     ) -> LuaResult<Handle> {
         tracing::debug!(deferred = true, "new runtime thread");
-
-        let handle = Handle::new(self.lua, thread, args)?;
-        let handle_thread = handle.create_thread(self.lua)?;
-
-        self.queue_defer.push_item(self.lua, handle_thread, ())?;
-
-        Ok(handle)
+        self.queue_defer
+            .push_item_with_handle(self.lua, thread, args)
     }
 
     /**
@@ -228,20 +231,26 @@ impl<'lua> Runtime<'lua> {
         let main_exec = Arc::new(Executor::new());
 
         /*
-            Store the main executor in Lua, so that it may be used with LuaSpawnExt.
+            Store the main executor and queues in Lua, so that they may be used with LuaRuntimeExt.
 
-            Also ensure we do not already have an executor - this is a definite user error
-            and may happen if the user tries to run multiple runtimes on the same Lua state.
+            Also ensure we do not already have an executor or queues - these are definite user errors
+            and may happen if the user tries to run multiple runtimes on the same Lua state at once.
         */
         assert!(
             self.lua.app_data_ref::<Weak<Executor>>().is_none(),
-            "\
-            Lua state already has an executor attached!\
-            \nThis may be caused by running multiple runtimes on the same Lua state, or a call to Runtime::run being cancelled.\
-            \nOnly one runtime can be used per Lua state at once, and runtimes must always run until completion.\
-            "
+            "{ERR_METADATA_ALREADY_ATTACHED}"
+        );
+        assert!(
+            self.lua.app_data_ref::<SpawnedThreadQueue>().is_none(),
+            "{ERR_METADATA_ALREADY_ATTACHED}"
+        );
+        assert!(
+            self.lua.app_data_ref::<DeferredThreadQueue>().is_none(),
+            "{ERR_METADATA_ALREADY_ATTACHED}"
         );
         self.lua.set_app_data(Arc::downgrade(&main_exec));
+        self.lua.set_app_data(self.queue_spawn.clone());
+        self.lua.set_app_data(self.queue_defer.clone());
 
         /*
             Manually tick the Lua executor, while running under the main executor.
@@ -330,6 +339,14 @@ impl<'lua> Runtime<'lua> {
         self.status.set(Status::Completed);
 
         // Clean up
-        self.lua.remove_app_data::<Weak<Executor>>();
+        self.lua
+            .remove_app_data::<Weak<Executor>>()
+            .expect(ERR_METADATA_REMOVED);
+        self.lua
+            .remove_app_data::<SpawnedThreadQueue>()
+            .expect(ERR_METADATA_REMOVED);
+        self.lua
+            .remove_app_data::<DeferredThreadQueue>()
+            .expect(ERR_METADATA_REMOVED);
     }
 }

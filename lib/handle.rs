@@ -2,27 +2,35 @@
 #![allow(clippy::missing_panics_doc)]
 #![allow(clippy::module_name_repetitions)]
 
-use std::{cell::RefCell, rc::Rc};
+use std::{
+    cell::{Cell, RefCell},
+    rc::Rc,
+};
 
+use event_listener::Event;
 use mlua::prelude::*;
 
 use crate::{
     runtime::Runtime,
     status::Status,
+    traits::IntoLuaThread,
     util::{run_until_yield, ThreadWithArgs},
-    IntoLuaThread,
 };
 
 /**
     A handle to a thread that has been spawned onto a [`Runtime`].
 
-    This handle contains a single public method, [`Handle::result`], which may
-    be used to extract the result of the thread, once it has finished running.
+    This handle contains a public method, [`Handle::result`], which may
+    be used to extract the result of the thread, once it finishes running.
+
+    A result may be waited for using the [`Handle::listen`] method.
 */
 #[derive(Debug, Clone)]
 pub struct Handle {
     thread: Rc<RefCell<Option<ThreadWithArgs>>>,
     result: Rc<RefCell<Option<(bool, LuaRegistryKey)>>>,
+    status: Rc<Cell<bool>>,
+    event: Rc<Event>,
 }
 
 impl Handle {
@@ -39,6 +47,8 @@ impl Handle {
         Ok(Self {
             thread: Rc::new(RefCell::new(Some(packed))),
             result: Rc::new(RefCell::new(None)),
+            status: Rc::new(Cell::new(false)),
+            event: Rc::new(Event::new()),
         })
     }
 
@@ -59,7 +69,12 @@ impl Handle {
             .into_inner(lua)
     }
 
-    fn set<'lua>(&self, lua: &'lua Lua, result: &LuaResult<LuaMultiValue<'lua>>) -> LuaResult<()> {
+    fn set<'lua>(
+        &self,
+        lua: &'lua Lua,
+        result: &LuaResult<LuaMultiValue<'lua>>,
+        is_final: bool,
+    ) -> LuaResult<()> {
         self.result.borrow_mut().replace((
             result.is_ok(),
             match &result {
@@ -67,6 +82,10 @@ impl Handle {
                 Err(e) => lua.create_registry_value(e.clone())?,
             },
         ));
+        self.status.replace(is_final);
+        if is_final {
+            self.event.notify(usize::MAX);
+        }
         Ok(())
     }
 
@@ -90,6 +109,17 @@ impl Handle {
             Err(lua.registry_value(key).unwrap())
         })
     }
+
+    /**
+        Waits for this handle to have its final result available.
+
+        Does not wait if the final result is already available.
+    */
+    pub async fn listen(&self) {
+        if !self.status.get() {
+            self.event.listen().await;
+        }
+    }
 }
 
 impl LuaUserData for Handle {
@@ -103,8 +133,9 @@ impl LuaUserData for Handle {
                    it may be caught using the runtime and any error callback(s)
             */
             let (thread, args) = this.take(lua);
-            let result = run_until_yield(thread, args).await;
-            this.set(lua, &result)?;
+            let result = run_until_yield(thread.clone(), args).await;
+            let is_final = thread.status() != LuaThreadStatus::Resumable;
+            this.set(lua, &result, is_final)?;
             result
         });
     }

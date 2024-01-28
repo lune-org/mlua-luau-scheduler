@@ -9,4 +9,4 @@ mod util;
 pub use handle::Handle;
 pub use runtime::Runtime;
 pub use status::Status;
-pub use traits::{IntoLuaThread, LuaSpawnExt};
+pub use traits::{IntoLuaThread, LuaRuntimeExt};

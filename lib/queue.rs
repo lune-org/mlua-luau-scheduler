@@ -1,10 +1,11 @@
 use std::sync::Arc;
 
 use concurrent_queue::ConcurrentQueue;
+use derive_more::{Deref, DerefMut};
 use event_listener::Event;
 use mlua::prelude::*;
 
-use crate::{util::ThreadWithArgs, IntoLuaThread};
+use crate::{handle::Handle, traits::IntoLuaThread, util::ThreadWithArgs};
 
 /**
     Queue for storing [`LuaThread`]s with associated arguments.
@@ -43,6 +44,20 @@ impl ThreadQueue {
         Ok(())
     }
 
+    pub fn push_item_with_handle<'lua>(
+        &self,
+        lua: &'lua Lua,
+        thread: impl IntoLuaThread<'lua>,
+        args: impl IntoLuaMulti<'lua>,
+    ) -> LuaResult<Handle> {
+        let handle = Handle::new(lua, thread, args)?;
+        let handle_thread = handle.create_thread(lua)?;
+
+        self.push_item(lua, handle_thread, ())?;
+
+        Ok(handle)
+    }
+
     pub fn drain_items<'outer, 'lua>(
         &'outer self,
         lua: &'lua Lua,
@@ -57,5 +72,29 @@ impl ThreadQueue {
         if self.queue.is_empty() {
             self.event.listen().await;
         }
+    }
+}
+
+/**
+    Alias for [`ThreadQueue`], providing a newtype to store in Lua app data.
+*/
+#[derive(Debug, Clone, Deref, DerefMut)]
+pub(crate) struct SpawnedThreadQueue(ThreadQueue);
+
+impl SpawnedThreadQueue {
+    pub fn new() -> Self {
+        Self(ThreadQueue::new())
+    }
+}
+
+/**
+    Alias for [`ThreadQueue`], providing a newtype to store in Lua app data.
+*/
+#[derive(Debug, Clone, Deref, DerefMut)]
+pub(crate) struct DeferredThreadQueue(ThreadQueue);
+
+impl DeferredThreadQueue {
+    pub fn new() -> Self {
+        Self(ThreadQueue::new())
     }
 }

@@ -6,7 +6,7 @@ use async_fs::read_to_string;
 use async_io::block_on;
 
 use mlua::prelude::*;
-use mlua_luau_runtime::{LuaSpawnExt, Runtime};
+use mlua_luau_runtime::{LuaRuntimeExt, Runtime};
 
 const MAIN_SCRIPT: &str = include_str!("./lua/basic_spawn.luau");
 
@@ -19,7 +19,7 @@ pub fn main() -> LuaResult<()> {
         "readFile",
         lua.create_async_function(|lua, path: String| async move {
             // Spawn background task that does not take up resources on the Lua thread
-            let task = lua.spawn(async move {
+            let task = lua.spawn_future(async move {
                 match read_to_string(path).await {
                     Ok(s) => Ok(Some(s)),
                     Err(e) if e.kind() == ErrorKind::NotFound => Ok(None),

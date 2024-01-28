@@ -12,6 +12,7 @@ categories = ["async"]
 [dependencies]
 async-executor = "1.8"
 concurrent-queue = "2.4"
+derive_more = "0.99"
 event-listener = "4.0"
 futures-lite = "2.2"
 tracing = "0.1"
