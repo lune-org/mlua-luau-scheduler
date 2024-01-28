@@ -18,7 +18,8 @@ pub fn main() -> LuaResult<()> {
     let lua = Lua::new();
     let rt = Runtime::new(&lua);
 
-    lua.globals().set("spawn", rt.create_spawn_function()?)?;
+    let rt_fns = rt.create_functions()?;
+    lua.globals().set("spawn", rt_fns.spawn)?;
     lua.globals().set(
         "sleep",
         lua.create_async_function(|_, ()| async move {
@@ -31,7 +32,7 @@ pub fn main() -> LuaResult<()> {
 
     // Load the main script into the runtime
     let main = lua.load(MAIN_SCRIPT);
-    rt.spawn_thread(main, ())?;
+    rt.push_thread_front(main, ())?;
 
     // Run until completion
     block_on(rt.run());

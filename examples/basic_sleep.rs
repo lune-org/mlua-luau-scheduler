@@ -26,7 +26,7 @@ pub fn main() -> LuaResult<()> {
     // Load the main script into a runtime
     let rt = Runtime::new(&lua);
     let main = lua.load(MAIN_SCRIPT);
-    rt.spawn_thread(main, ())?;
+    rt.push_thread_front(main, ())?;
 
     // Run until completion
     block_on(rt.run());

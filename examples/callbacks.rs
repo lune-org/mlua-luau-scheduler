@@ -26,7 +26,7 @@ pub fn main() -> LuaResult<()> {
 
     // Load the main script into the runtime, and keep track of the thread we spawn
     let main = lua.load(MAIN_SCRIPT);
-    let handle = rt.spawn_thread(main, ())?;
+    let handle = rt.push_thread_front(main, ())?;
 
     // Run until completion
     block_on(rt.run());

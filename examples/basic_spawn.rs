@@ -19,7 +19,7 @@ pub fn main() -> LuaResult<()> {
         "readFile",
         lua.create_async_function(|lua, path: String| async move {
             // Spawn background task that does not take up resources on the Lua thread
-            let task = lua.spawn_future(async move {
+            let task = lua.spawn(async move {
                 match read_to_string(path).await {
                     Ok(s) => Ok(Some(s)),
                     Err(e) if e.kind() == ErrorKind::NotFound => Ok(None),
@@ -33,7 +33,7 @@ pub fn main() -> LuaResult<()> {
     // Load the main script into a runtime
     let rt = Runtime::new(&lua);
     let main = lua.load(MAIN_SCRIPT);
-    rt.spawn_thread(main, ())?;
+    rt.push_thread_front(main, ())?;
 
     // Run until completion
     block_on(rt.run());

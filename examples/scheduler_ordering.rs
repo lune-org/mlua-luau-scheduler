@@ -17,8 +17,9 @@ pub fn main() -> LuaResult<()> {
     let lua = Lua::new();
     let rt = Runtime::new(&lua);
 
-    lua.globals().set("spawn", rt.create_spawn_function()?)?;
-    lua.globals().set("defer", rt.create_defer_function()?)?;
+    let rt_fns = rt.create_functions()?;
+    lua.globals().set("spawn", rt_fns.spawn)?;
+    lua.globals().set("defer", rt_fns.defer)?;
     lua.globals().set(
         "sleep",
         lua.create_async_function(|_, duration: Option<f64>| async move {
@@ -31,7 +32,7 @@ pub fn main() -> LuaResult<()> {
 
     // Load the main script into the runtime, and keep track of the thread we spawn
     let main = lua.load(MAIN_SCRIPT);
-    let handle = rt.spawn_thread(main, ())?;
+    let handle = rt.push_thread_front(main, ())?;
 
     // Run until completion
     block_on(rt.run());

@@ -7,6 +7,6 @@ mod traits;
 mod util;
 
 pub use handle::Handle;
-pub use runtime::Runtime;
+pub use runtime::{Functions, Runtime};
 pub use status::Status;
 pub use traits::{IntoLuaThread, LuaRuntimeExt};

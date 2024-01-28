@@ -74,8 +74,8 @@ let sleepThread = lua.load("sleep(0.1)");
 let fileThread = lua.load("readFile(\"Cargo.toml\")");
 
 // ... spawn them both onto the runtime ...
-rt.spawn_thread(sleepThread, ());
-rt.spawn_thread(fileThread, ());
+rt.push_thread_front(sleepThread, ());
+rt.push_thread_front(fileThread, ());
 
 // ... and run until they finish
 block_on(rt.run());
