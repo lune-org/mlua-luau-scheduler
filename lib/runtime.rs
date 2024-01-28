@@ -35,6 +35,7 @@ Lua state runtime metadata was unexpectedly removed!\
 /**
     A runtime for running Lua threads and async tasks.
 */
+#[derive(Clone)]
 pub struct Runtime<'lua> {
     lua: &'lua Lua,
     queue_spawn: SpawnedThreadQueue,
