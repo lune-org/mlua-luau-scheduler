@@ -1,6 +1,7 @@
+#![allow(unused_imports)]
 #![allow(clippy::missing_errors_doc)]
 
-use std::{future::Future, sync::Weak};
+use std::{future::Future, rc::Weak as WeakRc, sync::Weak as WeakArc};
 
 use mlua::prelude::*;
 
@@ -8,7 +9,8 @@ use async_executor::{Executor, Task};
 
 use crate::{
     handle::Handle,
-    queue::{DeferredThreadQueue, SpawnedThreadQueue},
+    queue::{DeferredThreadQueue, FuturesQueue, SpawnedThreadQueue},
+    runtime::Runtime,
 };
 
 /**
@@ -58,10 +60,7 @@ where
 }
 
 /**
-    Trait for scheduling Lua threads and spawning `Send` futures on the current executor.
-
-    For spawning `!Send` futures on the same local executor as a [`Lua`]
-    VM instance, [`Lua::create_async_function`] should be used instead.
+    Trait for scheduling Lua threads and spawning futures on the current executor.
 */
 pub trait LuaRuntimeExt<'lua> {
     /**
@@ -115,7 +114,7 @@ pub trait LuaRuntimeExt<'lua> {
             lua.globals().set(
                 "spawnBackgroundTask",
                 lua.create_async_function(|lua, ()| async move {
-                    lua.spawn_future(async move {
+                    lua.spawn(async move {
                         println!("Hello from background task!");
                     }).await;
                     Ok(())
@@ -133,6 +132,47 @@ pub trait LuaRuntimeExt<'lua> {
         [`Runtime`]: crate::Runtime
     */
     fn spawn<T: Send + 'static>(&self, fut: impl Future<Output = T> + Send + 'static) -> Task<T>;
+
+    /**
+        Spawns the given thread-local future on the current executor.
+
+        Note that this future will run detached and always to completion,
+        preventing the [`Runtime`] was spawned on from completing until done.
+
+        # Panics
+
+        Panics if called outside of a running [`Runtime`].
+
+        # Example usage
+
+        ```rust
+        use async_io::block_on;
+
+        use mlua::prelude::*;
+        use mlua_luau_runtime::*;
+
+        fn main() -> LuaResult<()> {
+            let lua = Lua::new();
+
+            lua.globals().set(
+                "spawnLocalTask",
+                lua.create_async_function(|lua, ()| async move {
+                    lua.spawn_local(async move {
+                        println!("Hello from local task!");
+                    });
+                    Ok(())
+                })?
+            )?;
+
+            let rt = Runtime::new(&lua);
+            rt.push_thread_front(lua.load("spawnLocalTask()"), ());
+            block_on(rt.run());
+
+            Ok(())
+        }
+        ```
+    */
+    fn spawn_local(&self, fut: impl Future<Output = ()> + 'static);
 }
 
 impl<'lua> LuaRuntimeExt<'lua> for Lua {
@@ -160,11 +200,21 @@ impl<'lua> LuaRuntimeExt<'lua> for Lua {
 
     fn spawn<T: Send + 'static>(&self, fut: impl Future<Output = T> + Send + 'static) -> Task<T> {
         let exec = self
-            .app_data_ref::<Weak<Executor>>()
+            .app_data_ref::<WeakArc<Executor>>()
             .expect("futures can only be spawned within a runtime")
             .upgrade()
             .expect("executor was dropped");
         tracing::trace!("spawning future on executor");
         exec.spawn(fut)
+    }
+
+    fn spawn_local(&self, fut: impl Future<Output = ()> + 'static) {
+        let queue = self
+            .app_data_ref::<WeakRc<FuturesQueue>>()
+            .expect("futures can only be spawned within a runtime")
+            .upgrade()
+            .expect("executor was dropped");
+        tracing::trace!("spawning local future on executor");
+        queue.push_item(fut);
     }
 }

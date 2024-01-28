@@ -1,8 +1,9 @@
-use std::sync::Arc;
+use std::{pin::Pin, rc::Rc, sync::Arc};
 
 use concurrent_queue::ConcurrentQueue;
 use derive_more::{Deref, DerefMut};
 use event_listener::Event;
+use futures_lite::{Future, FutureExt};
 use mlua::prelude::*;
 
 use crate::{handle::Handle, traits::IntoLuaThread, util::ThreadWithArgs};
@@ -96,5 +97,44 @@ pub(crate) struct DeferredThreadQueue(ThreadQueue);
 impl DeferredThreadQueue {
     pub fn new() -> Self {
         Self(ThreadQueue::new())
+    }
+}
+
+pub type LocalBoxFuture<'fut> = Pin<Box<dyn Future<Output = ()> + 'fut>>;
+
+/**
+    Queue for storing local futures.
+
+    Provides methods for pushing and draining the queue, as
+    well as listening for new items being pushed to the queue.
+*/
+#[derive(Debug, Clone)]
+pub(crate) struct FuturesQueue<'fut> {
+    queue: Rc<ConcurrentQueue<LocalBoxFuture<'fut>>>,
+    event: Arc<Event>,
+}
+
+impl<'fut> FuturesQueue<'fut> {
+    pub fn new() -> Self {
+        let queue = Rc::new(ConcurrentQueue::unbounded());
+        let event = Arc::new(Event::new());
+        Self { queue, event }
+    }
+
+    pub fn push_item(&self, fut: impl Future<Output = ()> + 'fut) {
+        let _ = self.queue.push(fut.boxed_local());
+        self.event.notify(usize::MAX);
+    }
+
+    pub fn drain_items<'outer>(
+        &'outer self,
+    ) -> impl Iterator<Item = LocalBoxFuture<'fut>> + 'outer {
+        self.queue.try_iter()
+    }
+
+    pub async fn wait_for_item(&self) {
+        if self.queue.is_empty() {
+            self.event.listen().await;
+        }
     }
 }

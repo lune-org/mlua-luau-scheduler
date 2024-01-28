@@ -26,7 +26,19 @@ pub fn main() -> LuaResult<()> {
                     Err(e) => Err(e),
                 }
             });
-            task.await.into_lua_err()
+
+            // Wait for it to complete
+            let result = task.await.into_lua_err();
+
+            // We can also spawn local tasks that do take up resources
+            // on the Lua thread, but that do not have the Send bound
+            if result.is_ok() {
+                lua.spawn_local(async move {
+                    println!("File read successfully!");
+                });
+            }
+
+            result
         })?,
     )?;
 

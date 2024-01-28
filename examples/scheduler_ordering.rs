@@ -6,7 +6,7 @@ use std::time::{Duration, Instant};
 use async_io::{block_on, Timer};
 
 use mlua::prelude::*;
-use mlua_luau_runtime::Runtime;
+use mlua_luau_runtime::{Functions, Runtime};
 
 const MAIN_SCRIPT: &str = include_str!("./lua/scheduler_ordering.luau");
 
@@ -16,10 +16,10 @@ pub fn main() -> LuaResult<()> {
     // Set up persistent Lua environment
     let lua = Lua::new();
     let rt = Runtime::new(&lua);
+    let fns = Functions::new(&lua)?;
 
-    let rt_fns = rt.create_functions()?;
-    lua.globals().set("spawn", rt_fns.spawn)?;
-    lua.globals().set("defer", rt_fns.defer)?;
+    lua.globals().set("spawn", fns.spawn)?;
+    lua.globals().set("defer", fns.defer)?;
     lua.globals().set(
         "sleep",
         lua.create_async_function(|_, duration: Option<f64>| async move {

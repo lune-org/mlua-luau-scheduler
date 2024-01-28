@@ -5,7 +5,7 @@ use std::time::Duration;
 use async_io::{block_on, Timer};
 
 use mlua::prelude::*;
-use mlua_luau_runtime::Runtime;
+use mlua_luau_runtime::{Functions, Runtime};
 
 const MAIN_SCRIPT: &str = include_str!("./lua/lots_of_threads.luau");
 
@@ -17,9 +17,9 @@ pub fn main() -> LuaResult<()> {
     // Set up persistent Lua environment
     let lua = Lua::new();
     let rt = Runtime::new(&lua);
+    let fns = Functions::new(&lua)?;
 
-    let rt_fns = rt.create_functions()?;
-    lua.globals().set("spawn", rt_fns.spawn)?;
+    lua.globals().set("spawn", fns.spawn)?;
     lua.globals().set(
         "sleep",
         lua.create_async_function(|_, ()| async move {
