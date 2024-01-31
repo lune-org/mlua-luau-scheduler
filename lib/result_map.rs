@@ -1,3 +1,5 @@
+#![allow(clippy::inline_always)]
+
 use std::{
     cell::RefCell,
     collections::{HashMap, HashSet},
@@ -20,16 +22,19 @@ impl ThreadResultMap {
         }
     }
 
+    #[inline(always)]
     pub fn track(&self, id: ThreadId) {
         self.tracked.borrow_mut().insert(id);
     }
 
+    #[inline(always)]
     pub fn is_tracked(&self, id: ThreadId) -> bool {
         self.tracked.borrow().contains(&id)
     }
 
+    #[inline(always)]
     pub fn insert(&self, id: ThreadId, result: ThreadResult) {
-        assert!(self.is_tracked(id), "Thread must be tracked");
+        debug_assert!(self.is_tracked(id), "Thread must be tracked");
         self.inner.borrow_mut().insert(id, result);
     }
 
