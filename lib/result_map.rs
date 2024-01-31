@@ -1,24 +1,24 @@
 #![allow(clippy::inline_always)]
 
-use std::{
-    cell::RefCell,
-    collections::{HashMap, HashSet},
-    rc::Rc,
-};
+use std::{cell::RefCell, rc::Rc};
+
+// NOTE: This is the hash algorithm that mlua also uses, so we
+// are not adding any additional dependencies / bloat by using it.
+use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::{thread_id::ThreadId, util::ThreadResult};
 
 #[derive(Clone)]
 pub(crate) struct ThreadResultMap {
-    tracked: Rc<RefCell<HashSet<ThreadId>>>,
-    inner: Rc<RefCell<HashMap<ThreadId, ThreadResult>>>,
+    tracked: Rc<RefCell<FxHashSet<ThreadId>>>,
+    inner: Rc<RefCell<FxHashMap<ThreadId, ThreadResult>>>,
 }
 
 impl ThreadResultMap {
     pub fn new() -> Self {
         Self {
-            tracked: Rc::new(RefCell::new(HashSet::new())),
-            inner: Rc::new(RefCell::new(HashMap::new())),
+            tracked: Rc::new(RefCell::new(FxHashSet::default())),
+            inner: Rc::new(RefCell::new(FxHashMap::default())),
         }
     }
 

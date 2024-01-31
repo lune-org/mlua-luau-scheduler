@@ -338,6 +338,7 @@ dependencies = [
  "event-listener",
  "futures-lite",
  "mlua",
+ "rustc-hash",
  "tracing",
  "tracing-subscriber",
 ]
