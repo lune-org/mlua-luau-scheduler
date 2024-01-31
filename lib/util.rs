@@ -22,6 +22,17 @@ pub(crate) async fn run_until_yield<'lua>(
 }
 
 /**
+    Checks if the given [`LuaValue`] is the async `POLL_PENDING` constant.
+*/
+#[inline]
+pub(crate) fn is_poll_pending(value: &LuaValue) -> bool {
+    value
+        .as_light_userdata()
+        .map(|l| l == Lua::poll_pending())
+        .unwrap_or_default()
+}
+
+/**
     Representation of a [`LuaResult`] with an associated [`LuaMultiValue`] currently stored in the Lua registry.
 */
 #[derive(Debug)]

@@ -14,11 +14,12 @@ use tracing::Instrument;
 
 use crate::{
     error_callback::ThreadErrorCallback,
-    handle::Handle,
     queue::{DeferredThreadQueue, FuturesQueue, SpawnedThreadQueue},
+    result_map::ThreadResultMap,
     status::Status,
+    thread_id::ThreadId,
     traits::IntoLuaThread,
-    util::run_until_yield,
+    util::{run_until_yield, ThreadResult},
 };
 
 const ERR_METADATA_ALREADY_ATTACHED: &str = "\
@@ -45,6 +46,7 @@ pub struct Runtime<'lua> {
     queue_spawn: SpawnedThreadQueue,
     queue_defer: DeferredThreadQueue,
     error_callback: ThreadErrorCallback,
+    result_map: ThreadResultMap,
     status: Rc<Cell<Status>>,
 }
 
@@ -63,7 +65,7 @@ impl<'lua> Runtime<'lua> {
         let queue_spawn = SpawnedThreadQueue::new();
         let queue_defer = DeferredThreadQueue::new();
         let error_callback = ThreadErrorCallback::default();
-        let status = Rc::new(Cell::new(Status::NotStarted));
+        let result_map = ThreadResultMap::new();
 
         assert!(
             lua.app_data_ref::<SpawnedThreadQueue>().is_none(),
@@ -77,16 +79,24 @@ impl<'lua> Runtime<'lua> {
             lua.app_data_ref::<ThreadErrorCallback>().is_none(),
             "{ERR_METADATA_ALREADY_ATTACHED}"
         );
+        assert!(
+            lua.app_data_ref::<ThreadResultMap>().is_none(),
+            "{ERR_METADATA_ALREADY_ATTACHED}"
+        );
 
         lua.set_app_data(queue_spawn.clone());
         lua.set_app_data(queue_defer.clone());
         lua.set_app_data(error_callback.clone());
+        lua.set_app_data(result_map.clone());
+
+        let status = Rc::new(Cell::new(Status::NotStarted));
 
         Runtime {
             lua,
             queue_spawn,
             queue_defer,
             error_callback,
+            result_map,
             status,
         }
     }
@@ -142,7 +152,7 @@ impl<'lua> Runtime<'lua> {
 
         # Returns
 
-        Returns a [`Handle`] that can be used to retrieve the result of the thread.
+        Returns a [`ThreadId`] that can be used to retrieve the result of the thread.
 
         Note that the result may not be available until [`Runtime::run`] completes.
 
@@ -154,10 +164,11 @@ impl<'lua> Runtime<'lua> {
         &self,
         thread: impl IntoLuaThread<'lua>,
         args: impl IntoLuaMulti<'lua>,
-    ) -> LuaResult<Handle> {
+    ) -> LuaResult<ThreadId> {
         tracing::debug!(deferred = false, "new runtime thread");
-        self.queue_spawn
-            .push_item_with_handle(self.lua, thread, args)
+        let id = self.queue_spawn.push_item(self.lua, thread, args)?;
+        self.result_map.track(id);
+        Ok(id)
     }
 
     /**
@@ -169,7 +180,7 @@ impl<'lua> Runtime<'lua> {
 
         # Returns
 
-        Returns a [`Handle`] that can be used to retrieve the result of the thread.
+        Returns a [`ThreadId`] that can be used to retrieve the result of the thread.
 
         Note that the result may not be available until [`Runtime::run`] completes.
 
@@ -181,10 +192,30 @@ impl<'lua> Runtime<'lua> {
         &self,
         thread: impl IntoLuaThread<'lua>,
         args: impl IntoLuaMulti<'lua>,
-    ) -> LuaResult<Handle> {
+    ) -> LuaResult<ThreadId> {
         tracing::debug!(deferred = true, "new runtime thread");
-        self.queue_defer
-            .push_item_with_handle(self.lua, thread, args)
+        let id = self.queue_defer.push_item(self.lua, thread, args)?;
+        self.result_map.track(id);
+        Ok(id)
+    }
+
+    /**
+        Gets the tracked result for the [`LuaThread`] with the given [`ThreadId`].
+
+        Depending on the current [`Runtime::status`], this method will return:
+
+        - [`Status::NotStarted`]: returns `None`.
+        - [`Status::Running`]: may return `Some(Ok(v))` or `Some(Err(e))`, but it is not guaranteed.
+        - [`Status::Completed`]: returns `Some(Ok(v))` or `Some(Err(e))`.
+
+        Note that this method also takes the value out of the runtime and
+        stops tracking the given thread, so it may only be called once.
+
+        Any subsequent calls after this method returns `Some` will return `None`.
+    */
+    #[must_use]
+    pub fn thread_result(&self, id: ThreadId) -> Option<LuaResult<LuaMultiValue<'lua>>> {
+        self.result_map.remove(id).map(|r| r.value(self.lua))
     }
 
     /**
@@ -245,14 +276,29 @@ impl<'lua> Runtime<'lua> {
             when there are new Lua threads to enqueue and potentially more work to be done.
         */
         let fut = async {
+            let result_map = self.result_map.clone();
             let process_thread = |thread: LuaThread<'lua>, args| {
                 // NOTE: Thread may have been cancelled from Lua
                 // before we got here, so we need to check it again
                 if thread.status() == LuaThreadStatus::Resumable {
+                    // Check if we should be tracking this thread
+                    let id = ThreadId::from(&thread);
+                    let id_tracked = result_map.is_tracked(id);
+                    let result_map_inner = if id_tracked {
+                        Some(result_map.clone())
+                    } else {
+                        None
+                    };
+                    // Spawn it on the executor and store the result when done
                     local_exec
                         .spawn(async move {
-                            if let Err(e) = run_until_yield(thread, args).await {
-                                self.error_callback.call(&e);
+                            let res = run_until_yield(thread, args).await;
+                            if let Err(e) = res.as_ref() {
+                                self.error_callback.call(e);
+                            }
+                            if id_tracked {
+                                let thread_res = ThreadResult::new(res, self.lua);
+                                result_map_inner.unwrap().insert(id, thread_res);
                             }
                         })
                         .detach();
@@ -351,6 +397,9 @@ impl Drop for Runtime<'_> {
             .expect(ERR_METADATA_REMOVED);
         self.lua
             .remove_app_data::<ThreadErrorCallback>()
+            .expect(ERR_METADATA_REMOVED);
+        self.lua
+            .remove_app_data::<ThreadResultMap>()
             .expect(ERR_METADATA_REMOVED);
     }
 }

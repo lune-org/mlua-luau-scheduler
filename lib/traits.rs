@@ -8,9 +8,9 @@ use mlua::prelude::*;
 use async_executor::{Executor, Task};
 
 use crate::{
-    handle::Handle,
     queue::{DeferredThreadQueue, FuturesQueue, SpawnedThreadQueue},
     runtime::Runtime,
+    thread_id::ThreadId,
 };
 
 /**
@@ -76,7 +76,7 @@ pub trait LuaRuntimeExt<'lua> {
         &'lua self,
         thread: impl IntoLuaThread<'lua>,
         args: impl IntoLuaMulti<'lua>,
-    ) -> LuaResult<Handle>;
+    ) -> LuaResult<ThreadId>;
 
     /**
         Pushes (defers) a lua thread to the **back** of the current runtime.
@@ -91,7 +91,7 @@ pub trait LuaRuntimeExt<'lua> {
         &'lua self,
         thread: impl IntoLuaThread<'lua>,
         args: impl IntoLuaMulti<'lua>,
-    ) -> LuaResult<Handle>;
+    ) -> LuaResult<ThreadId>;
 
     /**
         Spawns the given future on the current executor and returns its [`Task`].
@@ -180,22 +180,22 @@ impl<'lua> LuaRuntimeExt<'lua> for Lua {
         &'lua self,
         thread: impl IntoLuaThread<'lua>,
         args: impl IntoLuaMulti<'lua>,
-    ) -> LuaResult<Handle> {
+    ) -> LuaResult<ThreadId> {
         let queue = self
             .app_data_ref::<SpawnedThreadQueue>()
             .expect("lua threads can only be pushed within a runtime");
-        queue.push_item_with_handle(self, thread, args)
+        queue.push_item(self, thread, args)
     }
 
     fn push_thread_back(
         &'lua self,
         thread: impl IntoLuaThread<'lua>,
         args: impl IntoLuaMulti<'lua>,
-    ) -> LuaResult<Handle> {
+    ) -> LuaResult<ThreadId> {
         let queue = self
             .app_data_ref::<DeferredThreadQueue>()
             .expect("lua threads can only be pushed within a runtime");
-        queue.push_item_with_handle(self, thread, args)
+        queue.push_item(self, thread, args)
     }
 
     fn spawn<T: Send + 'static>(&self, fut: impl Future<Output = T> + Send + 'static) -> Task<T> {

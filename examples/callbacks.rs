@@ -26,13 +26,13 @@ pub fn main() -> LuaResult<()> {
 
     // Load the main script into the runtime, and keep track of the thread we spawn
     let main = lua.load(MAIN_SCRIPT);
-    let handle = rt.push_thread_front(main, ())?;
+    let id = rt.push_thread_front(main, ())?;
 
     // Run until completion
     block_on(rt.run());
 
     // We should have gotten the error back from our script
-    assert!(handle.result(&lua).unwrap().is_err());
+    assert!(rt.thread_result(id).unwrap().is_err());
 
     Ok(())
 }

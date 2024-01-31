@@ -6,8 +6,10 @@ use mlua::prelude::*;
 use crate::{
     error_callback::ThreadErrorCallback,
     queue::{DeferredThreadQueue, SpawnedThreadQueue},
+    result_map::ThreadResultMap,
     runtime::Runtime,
-    util::LuaThreadOrFunction,
+    thread_id::ThreadId,
+    util::{is_poll_pending, LuaThreadOrFunction, ThreadResult},
 };
 
 const ERR_METADATA_NOT_ATTACHED: &str = "\
@@ -63,24 +65,39 @@ impl<'lua> Functions<'lua> {
             .app_data_ref::<ThreadErrorCallback>()
             .expect(ERR_METADATA_NOT_ATTACHED)
             .clone();
+        let result_map = lua
+            .app_data_ref::<ThreadResultMap>()
+            .expect(ERR_METADATA_NOT_ATTACHED)
+            .clone();
 
+        let spawn_map = result_map.clone();
         let spawn = lua.create_function(
             move |lua, (tof, args): (LuaThreadOrFunction, LuaMultiValue)| {
                 let thread = tof.into_thread(lua)?;
                 if thread.status() == LuaThreadStatus::Resumable {
                     // NOTE: We need to resume the thread once instantly for correct behavior,
                     // and only if we get the pending value back we can spawn to async executor
-                    match thread.resume::<_, LuaValue>(args.clone()) {
+                    match thread.resume::<_, LuaMultiValue>(args.clone()) {
                         Ok(v) => {
-                            if v.as_light_userdata()
-                                .map(|l| l == Lua::poll_pending())
-                                .unwrap_or_default()
-                            {
+                            if v.get(0).map(is_poll_pending).unwrap_or_default() {
                                 spawn_queue.push_item(lua, &thread, args)?;
+                            } else {
+                                // Not pending, store the value
+                                let id = ThreadId::from(&thread);
+                                if spawn_map.is_tracked(id) {
+                                    let res = ThreadResult::new(Ok(v), lua);
+                                    spawn_map.insert(id, res);
+                                }
                             }
                         }
                         Err(e) => {
                             error_callback.call(&e);
+                            // Not pending, store the error
+                            let id = ThreadId::from(&thread);
+                            if spawn_map.is_tracked(id) {
+                                let res = ThreadResult::new(Err(e), lua);
+                                spawn_map.insert(id, res);
+                            }
                         }
                     };
                 }

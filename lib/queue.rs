@@ -6,7 +6,7 @@ use event_listener::Event;
 use futures_lite::{Future, FutureExt};
 use mlua::prelude::*;
 
-use crate::{handle::Handle, traits::IntoLuaThread, util::ThreadWithArgs};
+use crate::{traits::IntoLuaThread, util::ThreadWithArgs, ThreadId};
 
 /**
     Queue for storing [`LuaThread`]s with associated arguments.
@@ -32,31 +32,18 @@ impl ThreadQueue {
         lua: &'lua Lua,
         thread: impl IntoLuaThread<'lua>,
         args: impl IntoLuaMulti<'lua>,
-    ) -> LuaResult<()> {
+    ) -> LuaResult<ThreadId> {
         let thread = thread.into_lua_thread(lua)?;
         let args = args.into_lua_multi(lua)?;
 
         tracing::trace!("pushing item to queue with {} args", args.len());
+        let id = ThreadId::from(&thread);
         let stored = ThreadWithArgs::new(lua, thread, args)?;
 
         self.queue.push(stored).into_lua_err()?;
         self.event.notify(usize::MAX);
 
-        Ok(())
-    }
-
-    pub fn push_item_with_handle<'lua>(
-        &self,
-        lua: &'lua Lua,
-        thread: impl IntoLuaThread<'lua>,
-        args: impl IntoLuaMulti<'lua>,
-    ) -> LuaResult<Handle> {
-        let handle = Handle::new(lua, thread, args)?;
-        let handle_thread = handle.create_thread(lua)?;
-
-        self.push_item(lua, handle_thread, ())?;
-
-        Ok(handle)
+        Ok(id)
     }
 
     pub fn drain_items<'outer, 'lua>(

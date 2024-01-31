@@ -32,13 +32,13 @@ pub fn main() -> LuaResult<()> {
 
     // Load the main script into the runtime, and keep track of the thread we spawn
     let main = lua.load(MAIN_SCRIPT);
-    let handle = rt.push_thread_front(main, ())?;
+    let id = rt.push_thread_front(main, ())?;
 
     // Run until completion
     block_on(rt.run());
 
     // We should have gotten proper values back from our script
-    let res = handle.result(&lua).unwrap().unwrap();
+    let res = rt.thread_result(id).unwrap().unwrap();
     let nums = Vec::<usize>::from_lua_multi(res, &lua)?;
     assert_eq!(nums, vec![1, 2, 3, 4, 5, 6]);
 
