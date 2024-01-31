@@ -22,6 +22,39 @@ pub(crate) async fn run_until_yield<'lua>(
 }
 
 /**
+    Representation of a [`LuaResult`] with an associated [`LuaMultiValue`] currently stored in the Lua registry.
+*/
+#[derive(Debug)]
+pub(crate) struct ThreadResult {
+    inner: LuaResult<LuaRegistryKey>,
+}
+
+impl ThreadResult {
+    pub fn new(result: LuaResult<LuaMultiValue>, lua: &Lua) -> Self {
+        Self {
+            inner: match result {
+                Ok(v) => Ok({
+                    let vec = v.into_vec();
+                    lua.create_registry_value(vec).expect("out of memory")
+                }),
+                Err(e) => Err(e),
+            },
+        }
+    }
+
+    pub fn value(self, lua: &Lua) -> LuaResult<LuaMultiValue> {
+        match self.inner {
+            Ok(key) => {
+                let vec = lua.registry_value(&key).unwrap();
+                lua.remove_registry_value(key).unwrap();
+                Ok(LuaMultiValue::from_vec(vec))
+            }
+            Err(e) => Err(e.clone()),
+        }
+    }
+}
+
+/**
     Representation of a [`LuaThread`] with its associated arguments currently stored in the Lua registry.
 */
 #[derive(Debug)]

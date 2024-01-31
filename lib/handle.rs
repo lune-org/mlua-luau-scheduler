@@ -14,7 +14,7 @@ use crate::{
     runtime::Runtime,
     status::Status,
     traits::IntoLuaThread,
-    util::{run_until_yield, ThreadWithArgs},
+    util::{run_until_yield, ThreadResult, ThreadWithArgs},
 };
 
 /**
@@ -28,7 +28,7 @@ use crate::{
 #[derive(Debug, Clone)]
 pub struct Handle {
     thread: Rc<RefCell<Option<ThreadWithArgs>>>,
-    result: Rc<RefCell<Option<(bool, LuaRegistryKey)>>>,
+    result: Rc<RefCell<Option<ThreadResult>>>,
     status: Rc<Cell<bool>>,
     event: Rc<Event>,
 }
@@ -69,24 +69,14 @@ impl Handle {
             .into_inner(lua)
     }
 
-    fn set<'lua>(
-        &self,
-        lua: &'lua Lua,
-        result: &LuaResult<LuaMultiValue<'lua>>,
-        is_final: bool,
-    ) -> LuaResult<()> {
-        self.result.borrow_mut().replace((
-            result.is_ok(),
-            match &result {
-                Ok(v) => lua.create_registry_value(v.clone().into_vec())?,
-                Err(e) => lua.create_registry_value(e.clone())?,
-            },
-        ));
+    fn set<'lua>(&self, lua: &'lua Lua, result: &LuaResult<LuaMultiValue<'lua>>, is_final: bool) {
+        self.result
+            .borrow_mut()
+            .replace(ThreadResult::new(result.clone(), lua));
         self.status.replace(is_final);
         if is_final {
             self.event.notify(usize::MAX);
         }
-        Ok(())
     }
 
     /**
@@ -97,17 +87,15 @@ impl Handle {
         - [`Status::NotStarted`]: returns `None`.
         - [`Status::Running`]: may return `Some(Ok(v))` or `Some(Err(e))`, but it is not guaranteed.
         - [`Status::Completed`]: returns `Some(Ok(v))` or `Some(Err(e))`.
+
+        Note that this method also takes the value out of the handle, so it may only be called once.
+
+        Any subsequent calls after this method returns `Some` will return `None`.
     */
     #[must_use]
     pub fn result<'lua>(&self, lua: &'lua Lua) -> Option<LuaResult<LuaMultiValue<'lua>>> {
-        let res = self.result.borrow();
-        let (is_ok, key) = res.as_ref()?;
-        Some(if *is_ok {
-            let v = lua.registry_value(key).unwrap();
-            Ok(LuaMultiValue::from_vec(v))
-        } else {
-            Err(lua.registry_value(key).unwrap())
-        })
+        let mut res = self.result.borrow_mut();
+        res.take().map(|r| r.value(lua))
     }
 
     /**
@@ -135,7 +123,7 @@ impl LuaUserData for Handle {
             let (thread, args) = this.take(lua);
             let result = run_until_yield(thread.clone(), args).await;
             let is_final = thread.status() != LuaThreadStatus::Resumable;
-            this.set(lua, &result, is_final)?;
+            this.set(lua, &result, is_final);
             result
         });
     }
