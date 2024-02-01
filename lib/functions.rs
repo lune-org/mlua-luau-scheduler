@@ -146,6 +146,7 @@ impl<'lua> Functions<'lua> {
             ("resume", resume.clone()),
             ("error", lua.globals().get::<_, LuaFunction>("error")?),
             ("select", lua.globals().get::<_, LuaFunction>("select")?),
+            ("unpack", lua.globals().get::<_, LuaFunction>("unpack")?),
             (
                 "create",
                 lua.globals()
