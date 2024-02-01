@@ -35,7 +35,6 @@ impl ThreadResultMap {
         self.tracked.borrow().contains(&id)
     }
 
-    #[inline]
     pub fn insert(&self, id: ThreadId, result: ThreadResult) {
         debug_assert!(self.is_tracked(id), "Thread must be tracked");
         self.results.borrow_mut().insert(id, result);
@@ -44,7 +43,6 @@ impl ThreadResultMap {
         }
     }
 
-    #[inline]
     pub async fn listen(&self, id: ThreadId) {
         debug_assert!(self.is_tracked(id), "Thread must be tracked");
         if !self.results.borrow().contains_key(&id) {
