@@ -51,6 +51,10 @@ name = "callbacks"
 test = true
 
 [[example]]
+name = "exit_code"
+test = true
+
+[[example]]
 name = "lots_of_threads"
 test = true
 

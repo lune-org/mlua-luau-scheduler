@@ -2,6 +2,7 @@
 
 use std::{
     cell::Cell,
+    process::ExitCode,
     rc::{Rc, Weak as WeakRc},
     sync::{Arc, Weak as WeakArc},
 };
@@ -14,6 +15,7 @@ use tracing::Instrument;
 
 use crate::{
     error_callback::ThreadErrorCallback,
+    exit::Exit,
     queue::{DeferredThreadQueue, FuturesQueue, SpawnedThreadQueue},
     result_map::ThreadResultMap,
     status::Status,
@@ -48,6 +50,7 @@ pub struct Runtime<'lua> {
     error_callback: ThreadErrorCallback,
     result_map: ThreadResultMap,
     status: Rc<Cell<Status>>,
+    exit: Exit,
 }
 
 impl<'lua> Runtime<'lua> {
@@ -66,6 +69,7 @@ impl<'lua> Runtime<'lua> {
         let queue_defer = DeferredThreadQueue::new();
         let error_callback = ThreadErrorCallback::default();
         let result_map = ThreadResultMap::new();
+        let exit = Exit::new();
 
         assert!(
             lua.app_data_ref::<SpawnedThreadQueue>().is_none(),
@@ -83,11 +87,16 @@ impl<'lua> Runtime<'lua> {
             lua.app_data_ref::<ThreadResultMap>().is_none(),
             "{ERR_METADATA_ALREADY_ATTACHED}"
         );
+        assert!(
+            lua.app_data_ref::<Exit>().is_none(),
+            "{ERR_METADATA_ALREADY_ATTACHED}"
+        );
 
         lua.set_app_data(queue_spawn.clone());
         lua.set_app_data(queue_defer.clone());
         lua.set_app_data(error_callback.clone());
         lua.set_app_data(result_map.clone());
+        lua.set_app_data(exit.clone());
 
         let status = Rc::new(Cell::new(Status::NotStarted));
 
@@ -98,6 +107,7 @@ impl<'lua> Runtime<'lua> {
             error_callback,
             result_map,
             status,
+            exit,
         }
     }
 
@@ -143,6 +153,23 @@ impl<'lua> Runtime<'lua> {
             "{ERR_SET_CALLBACK_WHEN_RUNNING}"
         );
         self.error_callback.clear();
+    }
+
+    /**
+        Gets the exit code for this runtime, if one has been set.
+    */
+    #[must_use]
+    pub fn get_exit_code(&self) -> Option<ExitCode> {
+        self.exit.get()
+    }
+
+    /**
+        Sets the exit code for this runtime.
+
+        This will cause [`Runtime::run`] to exit immediately.
+    */
+    pub fn set_exit_code(&self, code: ExitCode) {
+        self.exit.set(code);
     }
 
     /**
@@ -276,10 +303,11 @@ impl<'lua> Runtime<'lua> {
             Manually tick the Lua executor, while running under the main executor.
             Each tick we wait for the next action to perform, in prioritized order:
 
-            1. A Lua thread is available to run on the spawned queue
-            2. A Lua thread is available to run on the deferred queue
-            3. A new thread-local future is available to run on the local executor
-            4. Task(s) scheduled on the Lua executor have made progress and should be polled again
+            1. The exit event is triggered by setting an exit code
+            2. A Lua thread is available to run on the spawned queue
+            3. A Lua thread is available to run on the deferred queue
+            4. A new thread-local future is available to run on the local executor
+            5. Task(s) scheduled on the Lua executor have made progress and should be polled again
 
             This ordering is vital to ensure that we don't accidentally exit the main loop
             when there are new Lua threads to enqueue and potentially more work to be done.
@@ -315,11 +343,12 @@ impl<'lua> Runtime<'lua> {
             };
 
             loop {
-                let fut_spawn = self.queue_spawn.wait_for_item(); // 1
-                let fut_defer = self.queue_defer.wait_for_item(); // 2
-                let fut_futs = fut_queue.wait_for_item(); // 3
+                let fut_exit = self.exit.listen(); // 1
+                let fut_spawn = self.queue_spawn.wait_for_item(); // 2
+                let fut_defer = self.queue_defer.wait_for_item(); // 3
+                let fut_futs = fut_queue.wait_for_item(); // 4
 
-                // 4
+                // 5
                 let mut num_processed = 0;
                 let span_tick = tracing::debug_span!("tick_executor");
                 let fut_tick = async {
@@ -331,12 +360,19 @@ impl<'lua> Runtime<'lua> {
                     }
                 };
 
-                // 1 + 2 + 3 + 4
-                fut_spawn
+                // 1 + 2 + 3 + 4 + 5
+                fut_exit
+                    .or(fut_spawn)
                     .or(fut_defer)
                     .or(fut_futs)
                     .or(fut_tick.instrument(span_tick.or_current()))
                     .await;
+
+                // Check if we should exit
+                if self.exit.get().is_some() {
+                    tracing::trace!("exited with code");
+                    break;
+                }
 
                 // Emit traces
                 if num_processed > 0 {
@@ -409,6 +445,9 @@ impl Drop for Runtime<'_> {
             .expect(ERR_METADATA_REMOVED);
         self.lua
             .remove_app_data::<ThreadResultMap>()
+            .expect(ERR_METADATA_REMOVED);
+        self.lua
+            .remove_app_data::<Exit>()
             .expect(ERR_METADATA_REMOVED);
     }
 }

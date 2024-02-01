@@ -1,4 +1,5 @@
 mod error_callback;
+mod exit;
 mod functions;
 mod queue;
 mod result_map;

@@ -1,13 +1,16 @@
 #![allow(unused_imports)]
 #![allow(clippy::missing_errors_doc)]
 
-use std::{future::Future, rc::Weak as WeakRc, sync::Weak as WeakArc};
+use std::{
+    cell::Cell, future::Future, process::ExitCode, rc::Weak as WeakRc, sync::Weak as WeakArc,
+};
 
 use mlua::prelude::*;
 
 use async_executor::{Executor, Task};
 
 use crate::{
+    exit::Exit,
     queue::{DeferredThreadQueue, FuturesQueue, SpawnedThreadQueue},
     result_map::ThreadResultMap,
     runtime::Runtime,
@@ -61,9 +64,28 @@ where
 }
 
 /**
-    Trait for scheduling Lua threads and spawning futures on the current executor.
+    Trait for interacting with the current [`Runtime`].
+
+    Provides extra methods on the [`Lua`] struct for:
+
+    - Setting the exit code and forcibly stopping the runtime
+    - Pushing (spawning) and deferring (pushing to the back) lua threads
+    - Tracking and getting the result of lua threads
+    - Spawning thread-local (`!Send`) futures on the current executor
+    - Spawning background (`Send`) futures on the current executor
 */
 pub trait LuaRuntimeExt<'lua> {
+    /**
+        Sets the exit code of the current runtime.
+
+        See [`Runtime::set_exit_code`] for more information.
+
+        # Panics
+
+        Panics if called outside of a running [`Runtime`].
+    */
+    fn set_exit_code(&self, code: ExitCode);
+
     /**
         Pushes (spawns) a lua thread to the **front** of the current runtime.
 
@@ -206,6 +228,13 @@ pub trait LuaRuntimeExt<'lua> {
 }
 
 impl<'lua> LuaRuntimeExt<'lua> for Lua {
+    fn set_exit_code(&self, code: ExitCode) {
+        let exit = self
+            .app_data_ref::<Exit>()
+            .expect("exit code can only be set within a runtime");
+        exit.set(code);
+    }
+
     fn push_thread_front(
         &'lua self,
         thread: impl IntoLuaThread<'lua>,

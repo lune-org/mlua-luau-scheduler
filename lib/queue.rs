@@ -1,4 +1,4 @@
-use std::{pin::Pin, rc::Rc, sync::Arc};
+use std::{pin::Pin, rc::Rc};
 
 use concurrent_queue::ConcurrentQueue;
 use derive_more::{Deref, DerefMut};
@@ -16,14 +16,14 @@ use crate::{traits::IntoLuaThread, util::ThreadWithArgs, ThreadId};
 */
 #[derive(Debug, Clone)]
 pub(crate) struct ThreadQueue {
-    queue: Arc<ConcurrentQueue<ThreadWithArgs>>,
-    event: Arc<Event>,
+    queue: Rc<ConcurrentQueue<ThreadWithArgs>>,
+    event: Rc<Event>,
 }
 
 impl ThreadQueue {
     pub fn new() -> Self {
-        let queue = Arc::new(ConcurrentQueue::unbounded());
-        let event = Arc::new(Event::new());
+        let queue = Rc::new(ConcurrentQueue::unbounded());
+        let event = Rc::new(Event::new());
         Self { queue, event }
     }
 
@@ -98,13 +98,13 @@ pub type LocalBoxFuture<'fut> = Pin<Box<dyn Future<Output = ()> + 'fut>>;
 #[derive(Debug, Clone)]
 pub(crate) struct FuturesQueue<'fut> {
     queue: Rc<ConcurrentQueue<LocalBoxFuture<'fut>>>,
-    event: Arc<Event>,
+    event: Rc<Event>,
 }
 
 impl<'fut> FuturesQueue<'fut> {
     pub fn new() -> Self {
         let queue = Rc::new(ConcurrentQueue::unbounded());
-        let event = Arc::new(Event::new());
+        let event = Rc::new(Event::new());
         Self { queue, event }
     }
 
