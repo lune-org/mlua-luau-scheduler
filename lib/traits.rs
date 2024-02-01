@@ -95,6 +95,13 @@ pub trait LuaRuntimeExt<'lua> {
     ) -> LuaResult<ThreadId>;
 
     /**
+        Registers the given thread to be tracked within the current runtime.
+
+        Must be called before waiting for a thread to complete or getting its result.
+    */
+    fn track_thread(&'lua self, id: ThreadId);
+
+    /**
         Gets the result of the given thread.
 
         See [`Runtime::get_thread_result`] for more information.
@@ -219,6 +226,13 @@ impl<'lua> LuaRuntimeExt<'lua> for Lua {
             .app_data_ref::<DeferredThreadQueue>()
             .expect("lua threads can only be pushed within a runtime");
         queue.push_item(self, thread, args)
+    }
+
+    fn track_thread(&'lua self, id: ThreadId) {
+        let map = self
+            .app_data_ref::<ThreadResultMap>()
+            .expect("lua threads can only be tracked within a runtime");
+        map.track(id);
     }
 
     fn get_thread_result(&'lua self, id: ThreadId) -> Option<LuaResult<LuaMultiValue<'lua>>> {
