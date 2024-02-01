@@ -29,7 +29,7 @@ yield()
 const WRAP_IMPL_LUA: &str = r"
 local t = create(...)
 return function(...)
-    local results = { resume(f, ...) }
+    local results = { resume(t, ...) }
     if results[1] then
         return select(2, unpack(results))
     else
