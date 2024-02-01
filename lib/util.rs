@@ -4,12 +4,14 @@ use mlua::prelude::*;
 /**
     Runs a Lua thread until it manually yields (using coroutine.yield), errors, or completes.
 
-    Returns the values yielded by the thread, or the error that caused it to stop.
+    May return `None` if the thread was cancelled.
+
+    Otherwise returns the values yielded by the thread, or the error that caused it to stop.
 */
 pub(crate) async fn run_until_yield<'lua>(
     thread: LuaThread<'lua>,
     args: LuaMultiValue<'lua>,
-) -> LuaResult<LuaMultiValue<'lua>> {
+) -> Option<LuaResult<LuaMultiValue<'lua>>> {
     let mut stream = thread.into_async(args);
     /*
         NOTE: It is very important that we drop the thread/stream as
@@ -17,8 +19,13 @@ pub(crate) async fn run_until_yield<'lua>(
         and detached tasks will not drop until the executor does
 
         https://github.com/smol-rs/smol/issues/294
+
+        We also do not unwrap here since returning `None` is expected behavior for cancellation.
+
+        Even though we are converting into a stream, and then immediately running it,
+        the future may still be cancelled before it is polled, which gives us None.
     */
-    stream.next().await.unwrap()
+    stream.next().await
 }
 
 /**

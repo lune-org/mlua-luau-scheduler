@@ -326,12 +326,11 @@ impl<'lua> Runtime<'lua> {
                     } else {
                         None
                     };
-                    // Spawn it on the executor and store the result when done
-                    local_exec
-                        .spawn(async move {
-                            if id_tracked {
-                                // Run until yield and check if we got a final result
-                                let res = run_until_yield(thread.clone(), args).await;
+                    // Create our future which will run the thread and store its final result
+                    let fut = async move {
+                        if id_tracked {
+                            // Run until yield and check if we got a final result
+                            if let Some(res) = run_until_yield(thread.clone(), args).await {
                                 if let Err(e) = res.as_ref() {
                                     self.error_callback.call(e);
                                 }
@@ -339,15 +338,18 @@ impl<'lua> Runtime<'lua> {
                                     let thread_res = ThreadResult::new(res, self.lua);
                                     result_map_inner.unwrap().insert(id, thread_res);
                                 }
-                            } else {
-                                // Just run until yield
-                                let res = run_until_yield(thread, args).await;
+                            }
+                        } else {
+                            // Just run until yield
+                            if let Some(res) = run_until_yield(thread, args).await {
                                 if let Err(e) = res.as_ref() {
                                     self.error_callback.call(e);
                                 }
                             }
-                        })
-                        .detach();
+                        }
+                    };
+                    // Spawn it on the executor
+                    local_exec.spawn(fut).detach();
                 }
             };
 
