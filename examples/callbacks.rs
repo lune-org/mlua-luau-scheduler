@@ -32,7 +32,7 @@ pub fn main() -> LuaResult<()> {
     block_on(rt.run());
 
     // We should have gotten the error back from our script
-    assert!(rt.thread_result(id).unwrap().is_err());
+    assert!(rt.get_thread_result(id).unwrap().is_err());
 
     Ok(())
 }

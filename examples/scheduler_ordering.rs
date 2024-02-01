@@ -38,7 +38,7 @@ pub fn main() -> LuaResult<()> {
     block_on(rt.run());
 
     // We should have gotten proper values back from our script
-    let res = rt.thread_result(id).unwrap().unwrap();
+    let res = rt.get_thread_result(id).unwrap().unwrap();
     let nums = Vec::<usize>::from_lua_multi(res, &lua)?;
     assert_eq!(nums, vec![1, 2, 3, 4, 5, 6]);
 

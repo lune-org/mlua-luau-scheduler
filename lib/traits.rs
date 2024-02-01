@@ -9,6 +9,7 @@ use async_executor::{Executor, Task};
 
 use crate::{
     queue::{DeferredThreadQueue, FuturesQueue, SpawnedThreadQueue},
+    result_map::ThreadResultMap,
     runtime::Runtime,
     thread_id::ThreadId,
 };
@@ -92,6 +93,28 @@ pub trait LuaRuntimeExt<'lua> {
         thread: impl IntoLuaThread<'lua>,
         args: impl IntoLuaMulti<'lua>,
     ) -> LuaResult<ThreadId>;
+
+    /**
+        Gets the result of the given thread.
+
+        See [`Runtime::get_thread_result`] for more information.
+
+        # Panics
+
+        Panics if called outside of a running [`Runtime`].
+    */
+    fn get_thread_result(&'lua self, id: ThreadId) -> Option<LuaResult<LuaMultiValue<'lua>>>;
+
+    /**
+        Waits for the given thread to complete.
+
+        See [`Runtime::wait_for_thread`] for more information.
+
+        # Panics
+
+        Panics if called outside of a running [`Runtime`].
+    */
+    fn wait_for_thread(&'lua self, id: ThreadId) -> impl Future<Output = ()>;
 
     /**
         Spawns the given future on the current executor and returns its [`Task`].
@@ -196,6 +219,20 @@ impl<'lua> LuaRuntimeExt<'lua> for Lua {
             .app_data_ref::<DeferredThreadQueue>()
             .expect("lua threads can only be pushed within a runtime");
         queue.push_item(self, thread, args)
+    }
+
+    fn get_thread_result(&'lua self, id: ThreadId) -> Option<LuaResult<LuaMultiValue<'lua>>> {
+        let map = self
+            .app_data_ref::<ThreadResultMap>()
+            .expect("lua threads results can only be retrieved within a runtime");
+        map.remove(id).map(|r| r.value(self))
+    }
+
+    fn wait_for_thread(&'lua self, id: ThreadId) -> impl Future<Output = ()> {
+        let map = self
+            .app_data_ref::<ThreadResultMap>()
+            .expect("lua threads results can only be retrieved within a runtime");
+        async move { map.listen(id).await }
     }
 
     fn spawn<T: Send + 'static>(&self, fut: impl Future<Output = T> + Send + 'static) -> Task<T> {

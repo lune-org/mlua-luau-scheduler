@@ -214,8 +214,17 @@ impl<'lua> Runtime<'lua> {
         Any subsequent calls after this method returns `Some` will return `None`.
     */
     #[must_use]
-    pub fn thread_result(&self, id: ThreadId) -> Option<LuaResult<LuaMultiValue<'lua>>> {
+    pub fn get_thread_result(&self, id: ThreadId) -> Option<LuaResult<LuaMultiValue<'lua>>> {
         self.result_map.remove(id).map(|r| r.value(self.lua))
+    }
+
+    /**
+        Waits for the [`LuaThread`] with the given [`ThreadId`] to complete.
+
+        This will return instantly if the thread has already completed.
+    */
+    pub async fn wait_for_thread(&self, id: ThreadId) {
+        self.result_map.listen(id).await;
     }
 
     /**
