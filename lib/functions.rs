@@ -1,6 +1,8 @@
 #![allow(unused_imports)]
 #![allow(clippy::module_name_repetitions)]
 
+use std::process::ExitCode;
+
 use mlua::prelude::*;
 
 use crate::{
@@ -9,6 +11,7 @@ use crate::{
     result_map::ThreadResultMap,
     runtime::Runtime,
     thread_id::ThreadId,
+    traits::LuaRuntimeExt,
     util::{is_poll_pending, LuaThreadOrFunction, ThreadResult},
 };
 
@@ -16,6 +19,11 @@ const ERR_METADATA_NOT_ATTACHED: &str = "\
 Lua state does not have runtime metadata attached!\
 \nThis is most likely caused by creating functions outside of a runtime.\
 \nRuntime functions must always be created from within an active runtime.\
+";
+
+const EXIT_IMPL_LUA: &str = r"
+exit(...)
+yield()
 ";
 
 /**
@@ -38,6 +46,12 @@ pub struct Functions<'lua> {
         Cancels a function / thread, removing it from the queue.
     */
     pub cancel: LuaFunction<'lua>,
+    /**
+        Exits the runtime, stopping all other threads and closing the runtime.
+
+        Yields the calling thread to ensure that it does not continue.
+    */
+    pub exit: LuaFunction<'lua>,
 }
 
 impl<'lua> Functions<'lua> {
@@ -128,10 +142,33 @@ impl<'lua> Functions<'lua> {
             }
         })?;
 
+        let exit_env = lua.create_table_from(vec![
+            (
+                "exit",
+                lua.create_function(|lua, code: Option<u8>| {
+                    let code = code.map(ExitCode::from).unwrap_or_default();
+                    lua.set_exit_code(code);
+                    Ok(())
+                })?,
+            ),
+            (
+                "yield",
+                lua.globals()
+                    .get::<_, LuaTable>("coroutine")?
+                    .get::<_, LuaFunction>("yield")?,
+            ),
+        ])?;
+        let exit = lua
+            .load(EXIT_IMPL_LUA)
+            .set_name("=__runtime_exit")
+            .set_environment(exit_env)
+            .into_function()?;
+
         Ok(Self {
             spawn,
             defer,
             cancel,
+            exit,
         })
     }
 }
