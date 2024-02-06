@@ -5,6 +5,7 @@ use std::{
     process::ExitCode,
     rc::{Rc, Weak as WeakRc},
     sync::{Arc, Weak as WeakArc},
+    thread::panicking,
 };
 
 use futures_lite::prelude::*;
@@ -417,7 +418,10 @@ impl<'lua> Runtime<'lua> {
 
                 // Empty executor = we didn't spawn any new Lua tasks
                 // above, and there are no remaining tasks to run later
-                if local_exec.is_empty() {
+                if local_exec.is_empty()
+                    && self.queue_spawn.is_empty()
+                    && self.queue_defer.is_empty()
+                {
                     break;
                 }
             }
@@ -445,20 +449,31 @@ impl<'lua> Runtime<'lua> {
 
 impl Drop for Runtime<'_> {
     fn drop(&mut self) {
-        self.lua
-            .remove_app_data::<SpawnedThreadQueue>()
-            .expect(ERR_METADATA_REMOVED);
-        self.lua
-            .remove_app_data::<DeferredThreadQueue>()
-            .expect(ERR_METADATA_REMOVED);
-        self.lua
-            .remove_app_data::<ThreadErrorCallback>()
-            .expect(ERR_METADATA_REMOVED);
-        self.lua
-            .remove_app_data::<ThreadResultMap>()
-            .expect(ERR_METADATA_REMOVED);
-        self.lua
-            .remove_app_data::<Exit>()
-            .expect(ERR_METADATA_REMOVED);
+        if panicking() {
+            // Do not cause further panics if already panicking, as
+            // this may abort the program instead of safely unwinding
+            self.lua.remove_app_data::<SpawnedThreadQueue>();
+            self.lua.remove_app_data::<DeferredThreadQueue>();
+            self.lua.remove_app_data::<ThreadErrorCallback>();
+            self.lua.remove_app_data::<ThreadResultMap>();
+            self.lua.remove_app_data::<Exit>();
+        } else {
+            // In any other case we panic if metadata was removed incorrectly
+            self.lua
+                .remove_app_data::<SpawnedThreadQueue>()
+                .expect(ERR_METADATA_REMOVED);
+            self.lua
+                .remove_app_data::<DeferredThreadQueue>()
+                .expect(ERR_METADATA_REMOVED);
+            self.lua
+                .remove_app_data::<ThreadErrorCallback>()
+                .expect(ERR_METADATA_REMOVED);
+            self.lua
+                .remove_app_data::<ThreadResultMap>()
+                .expect(ERR_METADATA_REMOVED);
+            self.lua
+                .remove_app_data::<Exit>()
+                .expect(ERR_METADATA_REMOVED);
+        }
     }
 }

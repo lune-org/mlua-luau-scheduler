@@ -46,6 +46,7 @@ impl ThreadQueue {
         Ok(id)
     }
 
+    #[inline]
     pub fn drain_items<'outer, 'lua>(
         &'outer self,
         lua: &'lua Lua,
@@ -56,10 +57,16 @@ impl ThreadQueue {
         self.queue.try_iter().map(|stored| stored.into_inner(lua))
     }
 
+    #[inline]
     pub async fn wait_for_item(&self) {
         if self.queue.is_empty() {
             self.event.listen().await;
         }
+    }
+
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.queue.is_empty()
     }
 }
 
