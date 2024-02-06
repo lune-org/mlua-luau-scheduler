@@ -13,15 +13,9 @@ use mlua::prelude::*;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ThreadId(usize);
 
-impl From<LuaThread<'_>> for ThreadId {
-    fn from(thread: LuaThread) -> Self {
-        Self(LuaValue::Thread(thread).to_pointer() as usize)
-    }
-}
-
 impl From<&LuaThread<'_>> for ThreadId {
     fn from(thread: &LuaThread) -> Self {
-        Self(LuaValue::Thread(thread.clone()).to_pointer() as usize)
+        Self(thread.to_pointer() as usize)
     }
 }
 

@@ -18,7 +18,7 @@ futures-lite = "2.2"
 rustc-hash = "1.1"
 tracing = "0.1"
 
-mlua = { version = "0.9.5", features = [
+mlua = { git = "https://github.com/mlua-rs/mlua.git", rev = "1754226c7440ec6c194d2d678ec083b621d46ceb", features = [
     "luau",
     "luau-jit",
     "async",

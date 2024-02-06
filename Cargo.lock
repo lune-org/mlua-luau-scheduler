@@ -311,8 +311,7 @@ checksum = "523dc4f511e55ab87b694dc30d0f820d60906ef06413f93d4d7a1385599cc149"
 [[package]]
 name = "mlua"
 version = "0.9.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1d3561f79659ff3afad7b25e2bf2ec21507fe601ebecb7f81088669ec4bfd51e"
+source = "git+https://github.com/mlua-rs/mlua.git?rev=1754226c7440ec6c194d2d678ec083b621d46ceb#1754226c7440ec6c194d2d678ec083b621d46ceb"
 dependencies = [
  "bstr",
  "erased-serde",
@@ -346,8 +345,7 @@ dependencies = [
 [[package]]
 name = "mlua-sys"
 version = "0.5.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2847b42764435201d8cbee1f517edb79c4cca4181877b90047587c89e1b7bce4"
+source = "git+https://github.com/mlua-rs/mlua.git?rev=1754226c7440ec6c194d2d678ec083b621d46ceb#1754226c7440ec6c194d2d678ec083b621d46ceb"
 dependencies = [
  "cc",
  "cfg-if",
