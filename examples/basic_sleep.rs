@@ -10,7 +10,11 @@ use mlua_luau_runtime::Runtime;
 const MAIN_SCRIPT: &str = include_str!("./lua/basic_sleep.luau");
 
 pub fn main() -> LuaResult<()> {
-    tracing_subscriber::fmt::init();
+    tracing_subscriber::fmt()
+        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
+        .with_target(false)
+        .without_time()
+        .init();
 
     // Set up persistent Lua environment
     let lua = Lua::new();

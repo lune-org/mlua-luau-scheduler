@@ -12,7 +12,7 @@ use futures_lite::prelude::*;
 use mlua::prelude::*;
 
 use async_executor::{Executor, LocalExecutor};
-use tracing::Instrument;
+use tracing::{debug, debug_span, instrument, Instrument};
 
 use crate::{
     error_callback::ThreadErrorCallback,
@@ -113,6 +113,14 @@ impl<'lua> Runtime<'lua> {
     }
 
     /**
+        Sets the current status of this runtime and emits relevant tracing events.
+    */
+    fn set_status(&self, status: Status) {
+        debug!(status = ?status, "status");
+        self.status.set(status);
+    }
+
+    /**
         Returns the current status of this runtime.
     */
     #[must_use]
@@ -193,7 +201,6 @@ impl<'lua> Runtime<'lua> {
         thread: impl IntoLuaThread<'lua>,
         args: impl IntoLuaMulti<'lua>,
     ) -> LuaResult<ThreadId> {
-        tracing::debug!(deferred = false, "new runtime thread");
         let id = self.queue_spawn.push_item(self.lua, thread, args)?;
         self.result_map.track(id);
         Ok(id)
@@ -221,7 +228,6 @@ impl<'lua> Runtime<'lua> {
         thread: impl IntoLuaThread<'lua>,
         args: impl IntoLuaMulti<'lua>,
     ) -> LuaResult<ThreadId> {
-        tracing::debug!(deferred = true, "new runtime thread");
         let id = self.queue_defer.push_item(self.lua, thread, args)?;
         self.result_map.track(id);
         Ok(id)
@@ -266,6 +272,7 @@ impl<'lua> Runtime<'lua> {
         Panics if the given Lua state already has a runtime attached to it.
     */
     #[allow(clippy::too_many_lines)]
+    #[instrument(skip(self))]
     pub async fn run(&self) {
         /*
             Create new executors to use - note that we do not need create multiple executors
@@ -316,6 +323,8 @@ impl<'lua> Runtime<'lua> {
         let fut = async {
             let result_map = self.result_map.clone();
             let process_thread = |thread: LuaThread<'lua>, args| {
+                let span = debug_span!("process_thread");
+                let _guard = span.enter();
                 // NOTE: Thread may have been cancelled from Lua
                 // before we got here, so we need to check it again
                 if thread.status() == LuaThreadStatus::Resumable {
@@ -386,11 +395,6 @@ impl<'lua> Runtime<'lua> {
                     break;
                 }
 
-                // Emit traces
-                if num_processed > 0 {
-                    tracing::trace!(num_processed, "tasks_processed");
-                }
-
                 // Process spawned threads first, then deferred threads
                 let mut num_spawned = 0;
                 let mut num_deferred = 0;
@@ -402,9 +406,6 @@ impl<'lua> Runtime<'lua> {
                     process_thread(thread, args);
                     num_deferred += 1;
                 }
-                if num_spawned > 0 || num_deferred > 0 {
-                    tracing::trace!(num_spawned, num_deferred, "tasks_spawned");
-                }
 
                 // Process spawned futures
                 let mut num_futs = 0;
@@ -412,30 +413,30 @@ impl<'lua> Runtime<'lua> {
                     local_exec.spawn(fut).detach();
                     num_futs += 1;
                 }
-                if num_futs > 0 {
-                    tracing::trace!(num_futs, "futures_spawned");
-                }
 
                 // Empty executor = we didn't spawn any new Lua tasks
                 // above, and there are no remaining tasks to run later
-                if local_exec.is_empty()
+                let completed = local_exec.is_empty()
                     && self.queue_spawn.is_empty()
-                    && self.queue_defer.is_empty()
-                {
+                    && self.queue_defer.is_empty();
+                debug!(
+                    futures_spawned = num_futs,
+                    futures_processed = num_processed,
+                    lua_threads_spawned = num_spawned,
+                    lua_threads_deferred = num_deferred,
+                    "loop"
+                );
+                if completed {
                     break;
                 }
             }
         };
 
         // Run the executor inside a span until all lua threads complete
-        self.status.set(Status::Running);
-        tracing::debug!("starting runtime");
-
-        let span = tracing::debug_span!("run_executor");
+        self.set_status(Status::Running);
+        let span = debug_span!("executor");
         main_exec.run(fut).instrument(span.or_current()).await;
-
-        tracing::debug!("runtime completed");
-        self.status.set(Status::Completed);
+        self.set_status(Status::Completed);
 
         // Clean up
         self.lua
