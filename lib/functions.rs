@@ -112,6 +112,7 @@ impl<'lua> Functions<'lua> {
         let resume_map = result_map.clone();
         let resume =
             lua.create_function(move |lua, (thread, args): (LuaThread, LuaMultiValue)| {
+                let _span = tracing::trace_span!("lua::resume").entered();
                 match thread.resume::<_, LuaMultiValue>(args.clone()) {
                     Ok(v) => {
                         if v.get(0).map(is_poll_pending).unwrap_or_default() {
@@ -163,6 +164,7 @@ impl<'lua> Functions<'lua> {
         let spawn_map = result_map.clone();
         let spawn = lua.create_function(
             move |lua, (tof, args): (LuaThreadOrFunction, LuaMultiValue)| {
+                let _span = tracing::trace_span!("lua::spawn").entered();
                 let thread = tof.into_thread(lua)?;
                 if thread.status() == LuaThreadStatus::Resumable {
                     // NOTE: We need to resume the thread once instantly for correct behavior,
@@ -199,6 +201,7 @@ impl<'lua> Functions<'lua> {
 
         let defer = lua.create_function(
             move |lua, (tof, args): (LuaThreadOrFunction, LuaMultiValue)| {
+                let _span = tracing::trace_span!("lua::defer").entered();
                 let thread = tof.into_thread(lua)?;
                 if thread.status() == LuaThreadStatus::Resumable {
                     defer_queue.push_item(lua, &thread, args)?;
@@ -213,6 +216,7 @@ impl<'lua> Functions<'lua> {
             .get::<_, LuaFunction>("close")?;
         let close_key = lua.create_registry_value(close)?;
         let cancel = lua.create_function(move |lua, thread: LuaThread| {
+            let _span = tracing::trace_span!("lua::cancel").entered();
             let close: LuaFunction = lua.registry_value(&close_key)?;
             match close.call(thread) {
                 Err(LuaError::CoroutineInactive) | Ok(()) => Ok(()),
@@ -224,6 +228,7 @@ impl<'lua> Functions<'lua> {
             (
                 "exit",
                 lua.create_function(|lua, code: Option<u8>| {
+                    let _span = tracing::trace_span!("lua::exit").entered();
                     let code = code.map(ExitCode::from).unwrap_or_default();
                     lua.set_exit_code(code);
                     Ok(())

@@ -1,8 +1,8 @@
 --!nocheck
 --!nolint UnknownGlobal
 
-local NUM_BATCHES = 100
-local NUM_THREADS = 10_000
+local NUM_BATCHES = 10
+local NUM_THREADS = 100_000
 
 print(`Spawning {NUM_BATCHES * NUM_THREADS} threads split into {NUM_BATCHES} batches\n`)
 
@@ -14,7 +14,7 @@ for i = 1, NUM_BATCHES do
 	local counter = 0
 	for j = 1, NUM_THREADS do
 		spawn(function()
-			sleep()
+			sleep(0.1)
 			counter += 1
 			if counter == NUM_THREADS then
 				spawn(thread)

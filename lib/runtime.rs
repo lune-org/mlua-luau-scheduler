@@ -12,7 +12,7 @@ use futures_lite::prelude::*;
 use mlua::prelude::*;
 
 use async_executor::{Executor, LocalExecutor};
-use tracing::{debug, debug_span, instrument, Instrument};
+use tracing::{debug, instrument, trace, trace_span, Instrument};
 
 use crate::{
     error_callback::ThreadErrorCallback,
@@ -272,7 +272,7 @@ impl<'lua> Runtime<'lua> {
         Panics if the given Lua state already has a runtime attached to it.
     */
     #[allow(clippy::too_many_lines)]
-    #[instrument(skip(self))]
+    #[instrument(level = "debug", name = "runtime::run", skip(self))]
     pub async fn run(&self) {
         /*
             Create new executors to use - note that we do not need create multiple executors
@@ -323,8 +323,6 @@ impl<'lua> Runtime<'lua> {
         let fut = async {
             let result_map = self.result_map.clone();
             let process_thread = |thread: LuaThread<'lua>, args| {
-                let span = debug_span!("process_thread");
-                let _guard = span.enter();
                 // NOTE: Thread may have been cancelled from Lua
                 // before we got here, so we need to check it again
                 if thread.status() == LuaThreadStatus::Resumable {
@@ -371,7 +369,7 @@ impl<'lua> Runtime<'lua> {
 
                 // 5
                 let mut num_processed = 0;
-                let span_tick = tracing::debug_span!("tick_executor");
+                let span_tick = trace_span!("runtime::tick");
                 let fut_tick = async {
                     local_exec.tick().await;
                     // NOTE: Try to do as much work as possible instead of just a single tick()
@@ -391,27 +389,34 @@ impl<'lua> Runtime<'lua> {
 
                 // Check if we should exit
                 if self.exit.get().is_some() {
-                    tracing::trace!("exited with code");
+                    debug!("exit signal received");
                     break;
                 }
 
-                // Process spawned threads first, then deferred threads
+                // Process spawned threads first, then deferred threads, then futures
                 let mut num_spawned = 0;
                 let mut num_deferred = 0;
-                for (thread, args) in self.queue_spawn.drain_items(self.lua) {
-                    process_thread(thread, args);
-                    num_spawned += 1;
+                let mut num_futures = 0;
+                {
+                    let _span = trace_span!("runtime::drain_spawned").entered();
+                    for (thread, args) in self.queue_spawn.drain_items(self.lua) {
+                        process_thread(thread, args);
+                        num_spawned += 1;
+                    }
                 }
-                for (thread, args) in self.queue_defer.drain_items(self.lua) {
-                    process_thread(thread, args);
-                    num_deferred += 1;
+                {
+                    let _span = trace_span!("runtime::drain_deferred").entered();
+                    for (thread, args) in self.queue_defer.drain_items(self.lua) {
+                        process_thread(thread, args);
+                        num_deferred += 1;
+                    }
                 }
-
-                // Process spawned futures
-                let mut num_futs = 0;
-                for fut in fut_queue.drain_items() {
-                    local_exec.spawn(fut).detach();
-                    num_futs += 1;
+                {
+                    let _span = trace_span!("runtime::drain_futures").entered();
+                    for fut in fut_queue.drain_items() {
+                        local_exec.spawn(fut).detach();
+                        num_futures += 1;
+                    }
                 }
 
                 // Empty executor = we didn't spawn any new Lua tasks
@@ -419,8 +424,8 @@ impl<'lua> Runtime<'lua> {
                 let completed = local_exec.is_empty()
                     && self.queue_spawn.is_empty()
                     && self.queue_defer.is_empty();
-                debug!(
-                    futures_spawned = num_futs,
+                trace!(
+                    futures_spawned = num_futures,
                     futures_processed = num_processed,
                     lua_threads_spawned = num_spawned,
                     lua_threads_deferred = num_deferred,
@@ -434,8 +439,7 @@ impl<'lua> Runtime<'lua> {
 
         // Run the executor inside a span until all lua threads complete
         self.set_status(Status::Running);
-        let span = debug_span!("executor");
-        main_exec.run(fut).instrument(span.or_current()).await;
+        main_exec.run(fut).await;
         self.set_status(Status::Completed);
 
         // Clean up
