@@ -17,6 +17,8 @@
 use std::time::Duration;
 
 use async_io::{block_on, Timer};
+use tracing_subscriber::layer::SubscriberExt;
+use tracing_tracy::{client::Client as TracyClient, TracyLayer};
 
 use mlua::prelude::*;
 use mlua_luau_runtime::{Functions, Runtime};
@@ -26,13 +28,10 @@ const MAIN_SCRIPT: &str = include_str!("./lua/lots_of_threads.luau");
 const ONE_NANOSECOND: Duration = Duration::from_nanos(1);
 
 pub fn main() -> LuaResult<()> {
-    use tracing_subscriber::layer::SubscriberExt;
-    tracing::subscriber::set_global_default(
-        tracing_subscriber::registry().with(tracing_tracy::TracyLayer::default()),
-    )
-    .unwrap();
-
-    let _client = tracing_tracy::client::Client::start();
+    let _client = TracyClient::start();
+    let _ = tracing::subscriber::set_global_default(
+        tracing_subscriber::registry().with(TracyLayer::default()),
+    );
 
     // Set up persistent Lua environment
     let lua = Lua::new();
