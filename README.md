@@ -16,7 +16,16 @@
 
 <br/>
 
-Luau-based async runtime, using [`mlua`](https://crates.io/crates/mlua) and [`async-executor`](https://crates.io/crates/async-executor).
+An async runtime for Luau, using [`mlua`][mlua] and built on top of [`async-executor`][async-executor].
+
+This crate is runtime-agnostic and is compatible with any async runtime, including [Tokio][tokio], [smol][smol], [async-std][async-std], and others. </br>
+However, since many dependencies are shared with [smol][smol], depending on it over other runtimes may be preferred.
+
+[async-executor]: https://crates.io/crates/async-executor
+[async-std]: https://async.rs
+[mlua]: https://crates.io/crates/mlua
+[smol]: https://github.com/smol-rs/smol
+[tokio]: https://tokio.rs
 
 ## Example Usage
 
