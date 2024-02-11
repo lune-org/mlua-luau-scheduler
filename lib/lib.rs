@@ -13,4 +13,4 @@ pub use functions::Functions;
 pub use runtime::Runtime;
 pub use status::Status;
 pub use thread_id::ThreadId;
-pub use traits::{IntoLuaThread, LuaRuntimeExt};
+pub use traits::{IntoLuaThread, LuaRuntimeExt, LuaSpawnExt};

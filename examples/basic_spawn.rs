@@ -6,7 +6,7 @@ use async_fs::read_to_string;
 use async_io::block_on;
 
 use mlua::prelude::*;
-use mlua_luau_runtime::{LuaRuntimeExt, Runtime};
+use mlua_luau_runtime::{LuaSpawnExt, Runtime};
 
 const MAIN_SCRIPT: &str = include_str!("./lua/basic_spawn.luau");
 

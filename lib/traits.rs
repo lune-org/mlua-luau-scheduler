@@ -71,8 +71,6 @@ where
     - Setting the exit code and forcibly stopping the runtime
     - Pushing (spawning) and deferring (pushing to the back) lua threads
     - Tracking and getting the result of lua threads
-    - Spawning thread-local (`!Send`) futures on the current executor
-    - Spawning background (`Send`) futures on the current executor
 */
 pub trait LuaRuntimeExt<'lua> {
     /**
@@ -144,7 +142,18 @@ pub trait LuaRuntimeExt<'lua> {
         Panics if called outside of a running [`Runtime`].
     */
     fn wait_for_thread(&'lua self, id: ThreadId) -> impl Future<Output = ()>;
+}
 
+/**
+    Trait for interacting with the [`Executor`] for the current [`Runtime`].
+
+    Provides extra methods on the [`Lua`] struct for:
+
+    - Spawning thread-local (`!Send`) futures on the current executor
+    - Spawning background (`Send`) futures on the current executor
+    - Spawning blocking tasks on a separate thread pool
+*/
+pub trait LuaSpawnExt<'lua> {
     /**
         Spawns the given future on the current executor and returns its [`Task`].
 
@@ -325,7 +334,9 @@ impl<'lua> LuaRuntimeExt<'lua> for Lua {
             .expect("lua threads results can only be retrieved within a runtime");
         async move { map.listen(id).await }
     }
+}
 
+impl<'lua> LuaSpawnExt<'lua> for Lua {
     fn spawn<F, T>(&self, fut: F) -> Task<T>
     where
         F: Future<Output = T> + Send + 'static,
