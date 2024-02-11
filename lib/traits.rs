@@ -5,9 +5,9 @@ use std::{
     cell::Cell, future::Future, process::ExitCode, rc::Weak as WeakRc, sync::Weak as WeakArc,
 };
 
-use mlua::prelude::*;
-
 use async_executor::{Executor, Task};
+use mlua::prelude::*;
+use tracing::trace;
 
 use crate::{
     exit::Exit,
@@ -183,7 +183,10 @@ pub trait LuaRuntimeExt<'lua> {
 
         [`Runtime`]: crate::Runtime
     */
-    fn spawn<T: Send + 'static>(&self, fut: impl Future<Output = T> + Send + 'static) -> Task<T>;
+    fn spawn<F, T>(&self, fut: F) -> Task<T>
+    where
+        F: Future<Output = T> + Send + 'static,
+        T: Send + 'static;
 
     /**
         Spawns the given thread-local future on the current executor.
@@ -224,7 +227,52 @@ pub trait LuaRuntimeExt<'lua> {
         }
         ```
     */
-    fn spawn_local(&self, fut: impl Future<Output = ()> + 'static);
+    fn spawn_local<F>(&self, fut: F)
+    where
+        F: Future<Output = ()> + 'static;
+
+    /**
+        Spawns the given blocking function and returns its [`Task`].
+
+        This function will run on a separate thread pool and not block the current executor.
+
+        # Panics
+
+        Panics if called outside of a running [`Runtime`].
+
+        # Example usage
+
+        ```rust
+        use async_io::block_on;
+
+        use mlua::prelude::*;
+        use mlua_luau_runtime::*;
+
+        fn main() -> LuaResult<()> {
+            let lua = Lua::new();
+
+            lua.globals().set(
+                "spawnBlockingTask",
+                lua.create_async_function(|lua, ()| async move {
+                    lua.spawn_blocking(|| {
+                        println!("Hello from blocking task!");
+                    }).await;
+                    Ok(())
+                })?
+            )?;
+
+            let rt = Runtime::new(&lua);
+            rt.push_thread_front(lua.load("spawnBlockingTask()"), ());
+            block_on(rt.run());
+
+            Ok(())
+        }
+        ```
+    */
+    fn spawn_blocking<F, T>(&self, f: F) -> Task<T>
+    where
+        F: FnOnce() -> T + Send + 'static,
+        T: Send + 'static;
 }
 
 impl<'lua> LuaRuntimeExt<'lua> for Lua {
@@ -278,23 +326,44 @@ impl<'lua> LuaRuntimeExt<'lua> for Lua {
         async move { map.listen(id).await }
     }
 
-    fn spawn<T: Send + 'static>(&self, fut: impl Future<Output = T> + Send + 'static) -> Task<T> {
+    fn spawn<F, T>(&self, fut: F) -> Task<T>
+    where
+        F: Future<Output = T> + Send + 'static,
+        T: Send + 'static,
+    {
         let exec = self
             .app_data_ref::<WeakArc<Executor>>()
-            .expect("futures can only be spawned within a runtime")
+            .expect("tasks can only be spawned within a runtime")
             .upgrade()
             .expect("executor was dropped");
-        tracing::trace!("spawning future on executor");
+        trace!("spawning future on executor");
         exec.spawn(fut)
     }
 
-    fn spawn_local(&self, fut: impl Future<Output = ()> + 'static) {
+    fn spawn_local<F>(&self, fut: F)
+    where
+        F: Future<Output = ()> + 'static,
+    {
         let queue = self
             .app_data_ref::<WeakRc<FuturesQueue>>()
-            .expect("futures can only be spawned within a runtime")
+            .expect("tasks can only be spawned within a runtime")
             .upgrade()
             .expect("executor was dropped");
-        tracing::trace!("spawning local future on executor");
+        trace!("spawning local task on executor");
         queue.push_item(fut);
+    }
+
+    fn spawn_blocking<F, T>(&self, f: F) -> Task<T>
+    where
+        F: FnOnce() -> T + Send + 'static,
+        T: Send + 'static,
+    {
+        let exec = self
+            .app_data_ref::<WeakArc<Executor>>()
+            .expect("tasks can only be spawned within a runtime")
+            .upgrade()
+            .expect("executor was dropped");
+        trace!("spawning blocking task on executor");
+        exec.spawn(blocking::unblock(f))
     }
 }

@@ -376,6 +376,7 @@ dependencies = [
  "async-executor",
  "async-fs",
  "async-io",
+ "blocking",
  "concurrent-queue",
  "derive_more",
  "event-listener",
