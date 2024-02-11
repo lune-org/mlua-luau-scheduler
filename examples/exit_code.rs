@@ -17,20 +17,20 @@ pub fn main() -> LuaResult<()> {
 
     // Set up persistent Lua environment
     let lua = Lua::new();
-    let rt = Scheduler::new(&lua);
+    let sched = Scheduler::new(&lua);
     let fns = Functions::new(&lua)?;
 
     lua.globals().set("exit", fns.exit)?;
 
     // Load the main script into the scheduler
     let main = lua.load(MAIN_SCRIPT);
-    rt.push_thread_front(main, ())?;
+    sched.push_thread_front(main, ())?;
 
     // Run until completion
-    block_on(rt.run());
+    block_on(sched.run());
 
     // Verify that we got a correct exit code
-    let code = rt.get_exit_code().unwrap_or_default();
+    let code = sched.get_exit_code().unwrap_or_default();
     assert!(format!("{code:?}").contains("(1)"));
 
     Ok(())

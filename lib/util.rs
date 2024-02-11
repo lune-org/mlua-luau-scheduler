@@ -9,7 +9,7 @@ use tracing::instrument;
 
     Otherwise returns the values yielded by the thread, or the error that caused it to stop.
 */
-#[instrument(level = "trace", name = "scheduler::run_until_yield", skip_all)]
+#[instrument(level = "trace", name = "Scheduler::run_until_yield", skip_all)]
 pub(crate) async fn run_until_yield<'lua>(
     thread: LuaThread<'lua>,
     args: LuaMultiValue<'lua>,

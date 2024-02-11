@@ -47,12 +47,12 @@ pub fn main() -> LuaResult<()> {
     )?;
 
     // Load the main script into a scheduler
-    let rt = Scheduler::new(&lua);
+    let sched = Scheduler::new(&lua);
     let main = lua.load(MAIN_SCRIPT);
-    rt.push_thread_front(main, ())?;
+    sched.push_thread_front(main, ())?;
 
     // Run until completion
-    block_on(rt.run());
+    block_on(sched.run());
 
     Ok(())
 }

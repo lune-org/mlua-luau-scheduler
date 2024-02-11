@@ -20,7 +20,7 @@ pub fn main() -> LuaResult<()> {
 
     // Set up persistent Lua environment
     let lua = Lua::new();
-    let rt = Scheduler::new(&lua);
+    let sched = Scheduler::new(&lua);
     let fns = Functions::new(&lua)?;
 
     lua.globals().set("spawn", fns.spawn)?;
@@ -36,10 +36,10 @@ pub fn main() -> LuaResult<()> {
 
     // Load the main script into the scheduler
     let main = lua.load(MAIN_SCRIPT);
-    rt.push_thread_front(main, ())?;
+    sched.push_thread_front(main, ())?;
 
     // Run until completion
-    block_on(rt.run());
+    block_on(sched.run());
 
     Ok(())
 }

@@ -369,7 +369,7 @@ impl<'lua> Scheduler<'lua> {
 
                 // 5
                 let mut num_processed = 0;
-                let span_tick = trace_span!("scheduler::tick");
+                let span_tick = trace_span!("Scheduler::tick");
                 let fut_tick = async {
                     local_exec.tick().await;
                     // NOTE: Try to do as much work as possible instead of just a single tick()
@@ -398,21 +398,21 @@ impl<'lua> Scheduler<'lua> {
                 let mut num_deferred = 0;
                 let mut num_futures = 0;
                 {
-                    let _span = trace_span!("scheduler::drain_spawned").entered();
+                    let _span = trace_span!("Scheduler::drain_spawned").entered();
                     for (thread, args) in self.queue_spawn.drain_items(self.lua) {
                         process_thread(thread, args);
                         num_spawned += 1;
                     }
                 }
                 {
-                    let _span = trace_span!("scheduler::drain_deferred").entered();
+                    let _span = trace_span!("Scheduler::drain_deferred").entered();
                     for (thread, args) in self.queue_defer.drain_items(self.lua) {
                         process_thread(thread, args);
                         num_deferred += 1;
                     }
                 }
                 {
-                    let _span = trace_span!("scheduler::drain_futures").entered();
+                    let _span = trace_span!("Scheduler::drain_futures").entered();
                     for fut in fut_queue.drain_items() {
                         local_exec.spawn(fut).detach();
                         num_futures += 1;

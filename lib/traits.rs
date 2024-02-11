@@ -182,9 +182,9 @@ pub trait LuaSpawnExt<'lua> {
                 })?
             )?;
 
-            let rt = Scheduler::new(&lua);
-            rt.push_thread_front(lua.load("spawnBackgroundTask()"), ());
-            block_on(rt.run());
+            let sched = Scheduler::new(&lua);
+            sched.push_thread_front(lua.load("spawnBackgroundTask()"), ());
+            block_on(sched.run());
 
             Ok(())
         }
@@ -226,9 +226,9 @@ pub trait LuaSpawnExt<'lua> {
                 })?
             )?;
 
-            let rt = Scheduler::new(&lua);
-            rt.push_thread_front(lua.load("spawnLocalTask()"), ());
-            block_on(rt.run());
+            let sched = Scheduler::new(&lua);
+            sched.push_thread_front(lua.load("spawnLocalTask()"), ());
+            block_on(sched.run());
 
             Ok(())
         }
@@ -268,9 +268,9 @@ pub trait LuaSpawnExt<'lua> {
                 })?
             )?;
 
-            let rt = Scheduler::new(&lua);
-            rt.push_thread_front(lua.load("spawnBlockingTask()"), ());
-            block_on(rt.run());
+            let sched = Scheduler::new(&lua);
+            sched.push_thread_front(lua.load("spawnBlockingTask()"), ());
+            block_on(sched.run());
 
             Ok(())
         }

@@ -19,8 +19,8 @@ pub fn main() -> LuaResult<()> {
     let lua = Lua::new();
 
     // Create a new scheduler with custom callbacks
-    let rt = Scheduler::new(&lua);
-    rt.set_error_callback(|e| {
+    let sched = Scheduler::new(&lua);
+    sched.set_error_callback(|e| {
         println!(
             "Captured error from Lua!\n{}\n{e}\n{}",
             "-".repeat(15),
@@ -30,13 +30,13 @@ pub fn main() -> LuaResult<()> {
 
     // Load the main script into the scheduler, and keep track of the thread we spawn
     let main = lua.load(MAIN_SCRIPT);
-    let id = rt.push_thread_front(main, ())?;
+    let id = sched.push_thread_front(main, ())?;
 
     // Run until completion
-    block_on(rt.run());
+    block_on(sched.run());
 
     // We should have gotten the error back from our script
-    assert!(rt.get_thread_result(id).unwrap().is_err());
+    assert!(sched.get_thread_result(id).unwrap().is_err());
 
     Ok(())
 }

@@ -76,16 +76,16 @@ lua.globals().set(
 ### 3. Set up scheduler, run threads
 
 ```rs
-let rt = Scheduler::new(&lua)?;
+let sched = Scheduler::new(&lua)?;
 
 // We can create multiple lua threads ...
 let sleepThread = lua.load("sleep(0.1)");
 let fileThread = lua.load("readFile(\"Cargo.toml\")");
 
 // ... spawn them both onto the scheduler ...
-rt.push_thread_front(sleepThread, ());
-rt.push_thread_front(fileThread, ());
+sched.push_thread_front(sleepThread, ());
+sched.push_thread_front(fileThread, ());
 
 // ... and run until they finish
-block_on(rt.run());
+block_on(sched.run());
 ```
