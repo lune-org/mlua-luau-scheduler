@@ -2,7 +2,7 @@
 #![allow(clippy::missing_panics_doc)]
 
 use mlua::prelude::*;
-use mlua_luau_runtime::Runtime;
+use mlua_luau_scheduler::Scheduler;
 
 use async_io::block_on;
 
@@ -18,8 +18,8 @@ pub fn main() -> LuaResult<()> {
     // Set up persistent Lua environment
     let lua = Lua::new();
 
-    // Create a new runtime with custom callbacks
-    let rt = Runtime::new(&lua);
+    // Create a new scheduler with custom callbacks
+    let rt = Scheduler::new(&lua);
     rt.set_error_callback(|e| {
         println!(
             "Captured error from Lua!\n{}\n{e}\n{}",
@@ -28,7 +28,7 @@ pub fn main() -> LuaResult<()> {
         );
     });
 
-    // Load the main script into the runtime, and keep track of the thread we spawn
+    // Load the main script into the scheduler, and keep track of the thread we spawn
     let main = lua.load(MAIN_SCRIPT);
     let id = rt.push_thread_front(main, ())?;
 

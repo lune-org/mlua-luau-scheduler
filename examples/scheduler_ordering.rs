@@ -6,7 +6,7 @@ use std::time::{Duration, Instant};
 use async_io::{block_on, Timer};
 
 use mlua::prelude::*;
-use mlua_luau_runtime::{Functions, Runtime};
+use mlua_luau_scheduler::{Functions, Scheduler};
 
 const MAIN_SCRIPT: &str = include_str!("./lua/scheduler_ordering.luau");
 
@@ -19,7 +19,7 @@ pub fn main() -> LuaResult<()> {
 
     // Set up persistent Lua environment
     let lua = Lua::new();
-    let rt = Runtime::new(&lua);
+    let rt = Scheduler::new(&lua);
     let fns = Functions::new(&lua)?;
 
     lua.globals().set("spawn", fns.spawn)?;
@@ -34,7 +34,7 @@ pub fn main() -> LuaResult<()> {
         })?,
     )?;
 
-    // Load the main script into the runtime, and keep track of the thread we spawn
+    // Load the main script into the scheduler, and keep track of the thread we spawn
     let main = lua.load(MAIN_SCRIPT);
     let id = rt.push_thread_front(main, ())?;
 

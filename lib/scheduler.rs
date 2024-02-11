@@ -26,25 +26,25 @@ use crate::{
 };
 
 const ERR_METADATA_ALREADY_ATTACHED: &str = "\
-Lua state already has runtime metadata attached!\
-\nThis may be caused by running multiple runtimes on the same Lua state, or a call to Runtime::run being cancelled.\
-\nOnly one runtime can be used per Lua state at once, and runtimes must always run until completion.\
+Lua state already has scheduler metadata attached!\
+\nThis may be caused by running multiple schedulers on the same Lua state, or a call to Scheduler::run being cancelled.\
+\nOnly one scheduler can be used per Lua state at once, and schedulers must always run until completion.\
 ";
 
 const ERR_METADATA_REMOVED: &str = "\
-Lua state runtime metadata was unexpectedly removed!\
-\nThis should never happen, and is likely a bug in the runtime.\
+Lua state scheduler metadata was unexpectedly removed!\
+\nThis should never happen, and is likely a bug in the scheduler.\
 ";
 
 const ERR_SET_CALLBACK_WHEN_RUNNING: &str = "\
-Cannot set error callback when runtime is running!\
+Cannot set error callback when scheduler is running!\
 ";
 
 /**
-    A runtime for running Lua threads and async tasks.
+    A scheduler for running Lua threads and async tasks.
 */
 #[derive(Clone)]
-pub struct Runtime<'lua> {
+pub struct Scheduler<'lua> {
     lua: &'lua Lua,
     queue_spawn: SpawnedThreadQueue,
     queue_defer: DeferredThreadQueue,
@@ -54,18 +54,18 @@ pub struct Runtime<'lua> {
     exit: Exit,
 }
 
-impl<'lua> Runtime<'lua> {
+impl<'lua> Scheduler<'lua> {
     /**
-        Creates a new runtime for the given Lua state.
+        Creates a new scheduler for the given Lua state.
 
-        This runtime will have a default error callback that prints errors to stderr.
+        This scheduler will have a default error callback that prints errors to stderr.
 
         # Panics
 
-        Panics if the given Lua state already has a runtime attached to it.
+        Panics if the given Lua state already has a scheduler attached to it.
     */
     #[must_use]
-    pub fn new(lua: &'lua Lua) -> Runtime<'lua> {
+    pub fn new(lua: &'lua Lua) -> Scheduler<'lua> {
         let queue_spawn = SpawnedThreadQueue::new();
         let queue_defer = DeferredThreadQueue::new();
         let error_callback = ThreadErrorCallback::default();
@@ -101,7 +101,7 @@ impl<'lua> Runtime<'lua> {
 
         let status = Rc::new(Cell::new(Status::NotStarted));
 
-        Runtime {
+        Scheduler {
             lua,
             queue_spawn,
             queue_defer,
@@ -113,7 +113,7 @@ impl<'lua> Runtime<'lua> {
     }
 
     /**
-        Sets the current status of this runtime and emits relevant tracing events.
+        Sets the current status of this scheduler and emits relevant tracing events.
     */
     fn set_status(&self, status: Status) {
         debug!(status = ?status, "status");
@@ -121,7 +121,7 @@ impl<'lua> Runtime<'lua> {
     }
 
     /**
-        Returns the current status of this runtime.
+        Returns the current status of this scheduler.
     */
     #[must_use]
     pub fn status(&self) -> Status {
@@ -129,7 +129,7 @@ impl<'lua> Runtime<'lua> {
     }
 
     /**
-        Sets the error callback for this runtime.
+        Sets the error callback for this scheduler.
 
         This callback will be called whenever a Lua thread errors.
 
@@ -137,7 +137,7 @@ impl<'lua> Runtime<'lua> {
 
         # Panics
 
-        Panics if the runtime is currently running.
+        Panics if the scheduler is currently running.
     */
     pub fn set_error_callback(&self, callback: impl Fn(LuaError) + Send + 'static) {
         assert!(
@@ -148,13 +148,13 @@ impl<'lua> Runtime<'lua> {
     }
 
     /**
-        Clears the error callback for this runtime.
+        Clears the error callback for this scheduler.
 
         This will remove any current error callback, including default(s).
 
         # Panics
 
-        Panics if the runtime is currently running.
+        Panics if the scheduler is currently running.
     */
     pub fn remove_error_callback(&self) {
         assert!(
@@ -165,7 +165,7 @@ impl<'lua> Runtime<'lua> {
     }
 
     /**
-        Gets the exit code for this runtime, if one has been set.
+        Gets the exit code for this scheduler, if one has been set.
     */
     #[must_use]
     pub fn get_exit_code(&self) -> Option<ExitCode> {
@@ -173,16 +173,16 @@ impl<'lua> Runtime<'lua> {
     }
 
     /**
-        Sets the exit code for this runtime.
+        Sets the exit code for this scheduler.
 
-        This will cause [`Runtime::run`] to exit immediately.
+        This will cause [`Scheduler::run`] to exit immediately.
     */
     pub fn set_exit_code(&self, code: ExitCode) {
         self.exit.set(code);
     }
 
     /**
-        Spawns a chunk / function / thread onto the runtime queue.
+        Spawns a chunk / function / thread onto the scheduler queue.
 
         Threads are guaranteed to be resumed in the order that they were pushed to the queue.
 
@@ -190,7 +190,7 @@ impl<'lua> Runtime<'lua> {
 
         Returns a [`ThreadId`] that can be used to retrieve the result of the thread.
 
-        Note that the result may not be available until [`Runtime::run`] completes.
+        Note that the result may not be available until [`Scheduler::run`] completes.
 
         # Errors
 
@@ -207,7 +207,7 @@ impl<'lua> Runtime<'lua> {
     }
 
     /**
-        Defers a chunk / function / thread onto the runtime queue.
+        Defers a chunk / function / thread onto the scheduler queue.
 
         Deferred threads are guaranteed to run after all spawned threads either yield or complete.
 
@@ -217,7 +217,7 @@ impl<'lua> Runtime<'lua> {
 
         Returns a [`ThreadId`] that can be used to retrieve the result of the thread.
 
-        Note that the result may not be available until [`Runtime::run`] completes.
+        Note that the result may not be available until [`Scheduler::run`] completes.
 
         # Errors
 
@@ -236,13 +236,13 @@ impl<'lua> Runtime<'lua> {
     /**
         Gets the tracked result for the [`LuaThread`] with the given [`ThreadId`].
 
-        Depending on the current [`Runtime::status`], this method will return:
+        Depending on the current [`Scheduler::status`], this method will return:
 
         - [`Status::NotStarted`]: returns `None`.
         - [`Status::Running`]: may return `Some(Ok(v))` or `Some(Err(e))`, but it is not guaranteed.
         - [`Status::Completed`]: returns `Some(Ok(v))` or `Some(Err(e))`.
 
-        Note that this method also takes the value out of the runtime and
+        Note that this method also takes the value out of the scheduler and
         stops tracking the given thread, so it may only be called once.
 
         Any subsequent calls after this method returns `Some` will return `None`.
@@ -262,17 +262,17 @@ impl<'lua> Runtime<'lua> {
     }
 
     /**
-        Runs the runtime until all Lua threads have completed.
+        Runs the scheduler until all Lua threads have completed.
 
         Note that the given Lua state must be the same one that was
-        used to create this runtime, otherwise this method will panic.
+        used to create this scheduler, otherwise this method will panic.
 
         # Panics
 
-        Panics if the given Lua state already has a runtime attached to it.
+        Panics if the given Lua state already has a scheduler attached to it.
     */
     #[allow(clippy::too_many_lines)]
-    #[instrument(level = "debug", name = "runtime::run", skip(self))]
+    #[instrument(level = "debug", name = "Scheduler::run", skip(self))]
     pub async fn run(&self) {
         /*
             Create new executors to use - note that we do not need create multiple executors
@@ -290,10 +290,10 @@ impl<'lua> Runtime<'lua> {
         let fut_queue = Rc::new(FuturesQueue::new());
 
         /*
-            Store the main executor and queue in Lua, so that they may be used with LuaRuntimeExt.
+            Store the main executor and queue in Lua, so that they may be used with LuaSchedulerExt.
 
             Also ensure we do not already have an executor or queues - these are definite user errors
-            and may happen if the user tries to run multiple runtimes on the same Lua state at once.
+            and may happen if the user tries to run multiple schedulers on the same Lua state at once.
         */
         assert!(
             self.lua.app_data_ref::<WeakArc<Executor>>().is_none(),
@@ -369,7 +369,7 @@ impl<'lua> Runtime<'lua> {
 
                 // 5
                 let mut num_processed = 0;
-                let span_tick = trace_span!("runtime::tick");
+                let span_tick = trace_span!("scheduler::tick");
                 let fut_tick = async {
                     local_exec.tick().await;
                     // NOTE: Try to do as much work as possible instead of just a single tick()
@@ -398,21 +398,21 @@ impl<'lua> Runtime<'lua> {
                 let mut num_deferred = 0;
                 let mut num_futures = 0;
                 {
-                    let _span = trace_span!("runtime::drain_spawned").entered();
+                    let _span = trace_span!("scheduler::drain_spawned").entered();
                     for (thread, args) in self.queue_spawn.drain_items(self.lua) {
                         process_thread(thread, args);
                         num_spawned += 1;
                     }
                 }
                 {
-                    let _span = trace_span!("runtime::drain_deferred").entered();
+                    let _span = trace_span!("scheduler::drain_deferred").entered();
                     for (thread, args) in self.queue_defer.drain_items(self.lua) {
                         process_thread(thread, args);
                         num_deferred += 1;
                     }
                 }
                 {
-                    let _span = trace_span!("runtime::drain_futures").entered();
+                    let _span = trace_span!("scheduler::drain_futures").entered();
                     for fut in fut_queue.drain_items() {
                         local_exec.spawn(fut).detach();
                         num_futures += 1;
@@ -452,7 +452,7 @@ impl<'lua> Runtime<'lua> {
     }
 }
 
-impl Drop for Runtime<'_> {
+impl Drop for Scheduler<'_> {
     fn drop(&mut self) {
         if panicking() {
             // Do not cause further panics if already panicking, as

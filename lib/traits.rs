@@ -13,13 +13,13 @@ use crate::{
     exit::Exit,
     queue::{DeferredThreadQueue, FuturesQueue, SpawnedThreadQueue},
     result_map::ThreadResultMap,
-    runtime::Runtime,
+    scheduler::Scheduler,
     thread_id::ThreadId,
 };
 
 /**
     Trait for any struct that can be turned into an [`LuaThread`]
-    and passed to the runtime, implemented for the following types:
+    and passed to the scheduler, implemented for the following types:
 
     - Lua threads ([`LuaThread`])
     - Lua functions ([`LuaFunction`])
@@ -64,34 +64,34 @@ where
 }
 
 /**
-    Trait for interacting with the current [`Runtime`].
+    Trait for interacting with the current [`Scheduler`].
 
     Provides extra methods on the [`Lua`] struct for:
 
-    - Setting the exit code and forcibly stopping the runtime
+    - Setting the exit code and forcibly stopping the scheduler
     - Pushing (spawning) and deferring (pushing to the back) lua threads
     - Tracking and getting the result of lua threads
 */
-pub trait LuaRuntimeExt<'lua> {
+pub trait LuaSchedulerExt<'lua> {
     /**
-        Sets the exit code of the current runtime.
+        Sets the exit code of the current scheduler.
 
-        See [`Runtime::set_exit_code`] for more information.
+        See [`Scheduler::set_exit_code`] for more information.
 
         # Panics
 
-        Panics if called outside of a running [`Runtime`].
+        Panics if called outside of a running [`Scheduler`].
     */
     fn set_exit_code(&self, code: ExitCode);
 
     /**
-        Pushes (spawns) a lua thread to the **front** of the current runtime.
+        Pushes (spawns) a lua thread to the **front** of the current scheduler.
 
-        See [`Runtime::push_thread_front`] for more information.
+        See [`Scheduler::push_thread_front`] for more information.
 
         # Panics
 
-        Panics if called outside of a running [`Runtime`].
+        Panics if called outside of a running [`Scheduler`].
     */
     fn push_thread_front(
         &'lua self,
@@ -100,13 +100,13 @@ pub trait LuaRuntimeExt<'lua> {
     ) -> LuaResult<ThreadId>;
 
     /**
-        Pushes (defers) a lua thread to the **back** of the current runtime.
+        Pushes (defers) a lua thread to the **back** of the current scheduler.
 
-        See [`Runtime::push_thread_back`] for more information.
+        See [`Scheduler::push_thread_back`] for more information.
 
         # Panics
 
-        Panics if called outside of a running [`Runtime`].
+        Panics if called outside of a running [`Scheduler`].
     */
     fn push_thread_back(
         &'lua self,
@@ -115,7 +115,7 @@ pub trait LuaRuntimeExt<'lua> {
     ) -> LuaResult<ThreadId>;
 
     /**
-        Registers the given thread to be tracked within the current runtime.
+        Registers the given thread to be tracked within the current scheduler.
 
         Must be called before waiting for a thread to complete or getting its result.
     */
@@ -124,28 +124,28 @@ pub trait LuaRuntimeExt<'lua> {
     /**
         Gets the result of the given thread.
 
-        See [`Runtime::get_thread_result`] for more information.
+        See [`Scheduler::get_thread_result`] for more information.
 
         # Panics
 
-        Panics if called outside of a running [`Runtime`].
+        Panics if called outside of a running [`Scheduler`].
     */
     fn get_thread_result(&'lua self, id: ThreadId) -> Option<LuaResult<LuaMultiValue<'lua>>>;
 
     /**
         Waits for the given thread to complete.
 
-        See [`Runtime::wait_for_thread`] for more information.
+        See [`Scheduler::wait_for_thread`] for more information.
 
         # Panics
 
-        Panics if called outside of a running [`Runtime`].
+        Panics if called outside of a running [`Scheduler`].
     */
     fn wait_for_thread(&'lua self, id: ThreadId) -> impl Future<Output = ()>;
 }
 
 /**
-    Trait for interacting with the [`Executor`] for the current [`Runtime`].
+    Trait for interacting with the [`Executor`] for the current [`Scheduler`].
 
     Provides extra methods on the [`Lua`] struct for:
 
@@ -159,7 +159,7 @@ pub trait LuaSpawnExt<'lua> {
 
         # Panics
 
-        Panics if called outside of a running [`Runtime`].
+        Panics if called outside of a running [`Scheduler`].
 
         # Example usage
 
@@ -167,7 +167,7 @@ pub trait LuaSpawnExt<'lua> {
         use async_io::block_on;
 
         use mlua::prelude::*;
-        use mlua_luau_runtime::*;
+        use mlua_luau_scheduler::*;
 
         fn main() -> LuaResult<()> {
             let lua = Lua::new();
@@ -182,15 +182,13 @@ pub trait LuaSpawnExt<'lua> {
                 })?
             )?;
 
-            let rt = Runtime::new(&lua);
+            let rt = Scheduler::new(&lua);
             rt.push_thread_front(lua.load("spawnBackgroundTask()"), ());
             block_on(rt.run());
 
             Ok(())
         }
         ```
-
-        [`Runtime`]: crate::Runtime
     */
     fn spawn<F, T>(&self, fut: F) -> Task<T>
     where
@@ -201,11 +199,11 @@ pub trait LuaSpawnExt<'lua> {
         Spawns the given thread-local future on the current executor.
 
         Note that this future will run detached and always to completion,
-        preventing the [`Runtime`] was spawned on from completing until done.
+        preventing the [`Scheduler`] was spawned on from completing until done.
 
         # Panics
 
-        Panics if called outside of a running [`Runtime`].
+        Panics if called outside of a running [`Scheduler`].
 
         # Example usage
 
@@ -213,7 +211,7 @@ pub trait LuaSpawnExt<'lua> {
         use async_io::block_on;
 
         use mlua::prelude::*;
-        use mlua_luau_runtime::*;
+        use mlua_luau_scheduler::*;
 
         fn main() -> LuaResult<()> {
             let lua = Lua::new();
@@ -228,7 +226,7 @@ pub trait LuaSpawnExt<'lua> {
                 })?
             )?;
 
-            let rt = Runtime::new(&lua);
+            let rt = Scheduler::new(&lua);
             rt.push_thread_front(lua.load("spawnLocalTask()"), ());
             block_on(rt.run());
 
@@ -247,7 +245,7 @@ pub trait LuaSpawnExt<'lua> {
 
         # Panics
 
-        Panics if called outside of a running [`Runtime`].
+        Panics if called outside of a running [`Scheduler`].
 
         # Example usage
 
@@ -255,7 +253,7 @@ pub trait LuaSpawnExt<'lua> {
         use async_io::block_on;
 
         use mlua::prelude::*;
-        use mlua_luau_runtime::*;
+        use mlua_luau_scheduler::*;
 
         fn main() -> LuaResult<()> {
             let lua = Lua::new();
@@ -270,7 +268,7 @@ pub trait LuaSpawnExt<'lua> {
                 })?
             )?;
 
-            let rt = Runtime::new(&lua);
+            let rt = Scheduler::new(&lua);
             rt.push_thread_front(lua.load("spawnBlockingTask()"), ());
             block_on(rt.run());
 
@@ -284,11 +282,11 @@ pub trait LuaSpawnExt<'lua> {
         T: Send + 'static;
 }
 
-impl<'lua> LuaRuntimeExt<'lua> for Lua {
+impl<'lua> LuaSchedulerExt<'lua> for Lua {
     fn set_exit_code(&self, code: ExitCode) {
         let exit = self
             .app_data_ref::<Exit>()
-            .expect("exit code can only be set within a runtime");
+            .expect("exit code can only be set from within an active scheduler");
         exit.set(code);
     }
 
@@ -299,7 +297,7 @@ impl<'lua> LuaRuntimeExt<'lua> for Lua {
     ) -> LuaResult<ThreadId> {
         let queue = self
             .app_data_ref::<SpawnedThreadQueue>()
-            .expect("lua threads can only be pushed within a runtime");
+            .expect("lua threads can only be pushed from within an active scheduler");
         queue.push_item(self, thread, args)
     }
 
@@ -310,28 +308,28 @@ impl<'lua> LuaRuntimeExt<'lua> for Lua {
     ) -> LuaResult<ThreadId> {
         let queue = self
             .app_data_ref::<DeferredThreadQueue>()
-            .expect("lua threads can only be pushed within a runtime");
+            .expect("lua threads can only be pushed from within an active scheduler");
         queue.push_item(self, thread, args)
     }
 
     fn track_thread(&'lua self, id: ThreadId) {
         let map = self
             .app_data_ref::<ThreadResultMap>()
-            .expect("lua threads can only be tracked within a runtime");
+            .expect("lua threads can only be tracked from within an active scheduler");
         map.track(id);
     }
 
     fn get_thread_result(&'lua self, id: ThreadId) -> Option<LuaResult<LuaMultiValue<'lua>>> {
         let map = self
             .app_data_ref::<ThreadResultMap>()
-            .expect("lua threads results can only be retrieved within a runtime");
+            .expect("lua threads results can only be retrieved from within an active scheduler");
         map.remove(id).map(|r| r.value(self))
     }
 
     fn wait_for_thread(&'lua self, id: ThreadId) -> impl Future<Output = ()> {
         let map = self
             .app_data_ref::<ThreadResultMap>()
-            .expect("lua threads results can only be retrieved within a runtime");
+            .expect("lua threads results can only be retrieved from within an active scheduler");
         async move { map.listen(id).await }
     }
 }
@@ -344,7 +342,7 @@ impl<'lua> LuaSpawnExt<'lua> for Lua {
     {
         let exec = self
             .app_data_ref::<WeakArc<Executor>>()
-            .expect("tasks can only be spawned within a runtime")
+            .expect("tasks can only be spawned within an active scheduler")
             .upgrade()
             .expect("executor was dropped");
         trace!("spawning future on executor");
@@ -357,7 +355,7 @@ impl<'lua> LuaSpawnExt<'lua> for Lua {
     {
         let queue = self
             .app_data_ref::<WeakRc<FuturesQueue>>()
-            .expect("tasks can only be spawned within a runtime")
+            .expect("tasks can only be spawned within an active scheduler")
             .upgrade()
             .expect("executor was dropped");
         trace!("spawning local task on executor");
@@ -371,7 +369,7 @@ impl<'lua> LuaSpawnExt<'lua> for Lua {
     {
         let exec = self
             .app_data_ref::<WeakArc<Executor>>()
-            .expect("tasks can only be spawned within a runtime")
+            .expect("tasks can only be spawned within an active scheduler")
             .upgrade()
             .expect("executor was dropped");
         trace!("spawning blocking task on executor");

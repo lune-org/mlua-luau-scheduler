@@ -1,15 +1,15 @@
 #![allow(clippy::module_name_repetitions)]
 
 /**
-    The current status of a runtime.
+    The current status of a scheduler.
 */
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Status {
-    /// The runtime has not yet started running.
+    /// The scheduler has not yet started running.
     NotStarted,
-    /// The runtime is currently running.
+    /// The scheduler is currently running.
     Running,
-    /// The runtime has completed.
+    /// The scheduler has completed.
     Completed,
 }
 

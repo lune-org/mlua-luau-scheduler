@@ -1,12 +1,12 @@
 [package]
-name = "mlua-luau-runtime"
+name = "mlua-luau-scheduler"
 version = "0.0.0"
 edition = "2021"
 license = "MPL-2.0"
-repository = "https://github.com/lune-org/mlua-luau-runtime"
-description = "Luau-based async runtime, using mlua and async-executor"
+repository = "https://github.com/lune-org/mlua-luau-scheduler"
+description = "Luau-based async scheduler, using mlua and async-executor"
 readme = "README.md"
-keywords = ["async", "luau", "runtime"]
+keywords = ["async", "luau", "scheduler"]
 categories = ["async"]
 
 [dependencies]

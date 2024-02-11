@@ -6,7 +6,7 @@ use async_fs::read_to_string;
 use async_io::block_on;
 
 use mlua::prelude::*;
-use mlua_luau_runtime::{LuaSpawnExt, Runtime};
+use mlua_luau_scheduler::{LuaSpawnExt, Scheduler};
 
 const MAIN_SCRIPT: &str = include_str!("./lua/basic_spawn.luau");
 
@@ -46,8 +46,8 @@ pub fn main() -> LuaResult<()> {
         })?,
     )?;
 
-    // Load the main script into a runtime
-    let rt = Runtime::new(&lua);
+    // Load the main script into a scheduler
+    let rt = Scheduler::new(&lua);
     let main = lua.load(MAIN_SCRIPT);
     rt.push_thread_front(main, ())?;
 

@@ -9,16 +9,16 @@ use crate::{
     error_callback::ThreadErrorCallback,
     queue::{DeferredThreadQueue, SpawnedThreadQueue},
     result_map::ThreadResultMap,
-    runtime::Runtime,
+    scheduler::Scheduler,
     thread_id::ThreadId,
-    traits::LuaRuntimeExt,
+    traits::LuaSchedulerExt,
     util::{is_poll_pending, LuaThreadOrFunction, ThreadResult},
 };
 
 const ERR_METADATA_NOT_ATTACHED: &str = "\
-Lua state does not have runtime metadata attached!\
-\nThis is most likely caused by creating functions outside of a runtime.\
-\nRuntime functions must always be created from within an active runtime.\
+Lua state does not have scheduler metadata attached!\
+\nThis is most likely caused by creating functions outside of a scheduler.\
+\nScheduler functions must always be created from within an active scheduler.\
 ";
 
 const EXIT_IMPL_LUA: &str = r"
@@ -39,29 +39,29 @@ end
 ";
 
 /**
-    A collection of lua functions that may be called to interact with a [`Runtime`].
+    A collection of lua functions that may be called to interact with a [`Scheduler`].
 */
 pub struct Functions<'lua> {
     /**
         Implementation of `coroutine.resume` that handles async polling properly.
 
-        Defers onto the runtime queue if the thread calls an async function.
+        Defers onto the scheduler queue if the thread calls an async function.
     */
     pub resume: LuaFunction<'lua>,
     /**
         Implementation of `coroutine.wrap` that handles async polling properly.
 
-        Defers onto the runtime queue if the thread calls an async function.
+        Defers onto the scheduler queue if the thread calls an async function.
     */
     pub wrap: LuaFunction<'lua>,
     /**
         Resumes a function / thread once instantly, and runs until first yield.
 
-        Spawns onto the runtime queue if not completed.
+        Spawns onto the scheduler queue if not completed.
     */
     pub spawn: LuaFunction<'lua>,
     /**
-        Defers a function / thread onto the runtime queue.
+        Defers a function / thread onto the scheduler queue.
 
         Does not resume instantly, only adds to the queue.
     */
@@ -71,7 +71,7 @@ pub struct Functions<'lua> {
     */
     pub cancel: LuaFunction<'lua>,
     /**
-        Exits the runtime, stopping all other threads and closing the runtime.
+        Exits the scheduler, stopping all other threads and closing the scheduler.
 
         Yields the calling thread to ensure that it does not continue.
     */
@@ -80,7 +80,7 @@ pub struct Functions<'lua> {
 
 impl<'lua> Functions<'lua> {
     /**
-        Creates a new collection of Lua functions that may be called to interact with a [`Runtime`].
+        Creates a new collection of Lua functions that may be called to interact with a [`Scheduler`].
 
         # Errors
 
@@ -88,7 +88,7 @@ impl<'lua> Functions<'lua> {
 
         # Panics
 
-        Panics when the given [`Lua`] instance does not have an attached [`Runtime`].
+        Panics when the given [`Lua`] instance does not have an attached [`Scheduler`].
     */
     pub fn new(lua: &'lua Lua) -> LuaResult<Self> {
         let spawn_queue = lua
@@ -157,7 +157,7 @@ impl<'lua> Functions<'lua> {
         ])?;
         let wrap = lua
             .load(WRAP_IMPL_LUA)
-            .set_name("=__runtime_wrap")
+            .set_name("=__scheduler_wrap")
             .set_environment(wrap_env)
             .into_function()?;
 
@@ -243,7 +243,7 @@ impl<'lua> Functions<'lua> {
         ])?;
         let exit = lua
             .load(EXIT_IMPL_LUA)
-            .set_name("=__runtime_exit")
+            .set_name("=__scheduler_exit")
             .set_environment(exit_env)
             .into_function()?;
 
@@ -260,7 +260,7 @@ impl<'lua> Functions<'lua> {
 
 impl Functions<'_> {
     /**
-        Injects [`Runtime`]-compatible functions into the given [`Lua`] instance.
+        Injects [`Scheduler`]-compatible functions into the given [`Lua`] instance.
 
         This will overwrite the following functions:
 

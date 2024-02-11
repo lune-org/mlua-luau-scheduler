@@ -1,22 +1,22 @@
 <!-- markdownlint-disable MD033 -->
 <!-- markdownlint-disable MD041 -->
 
-<h1 align="center">mlua-luau-runtime</h1>
+<h1 align="center">mlua-luau-scheduler</h1>
 
 <div align="center">
 	<div>
-		<a href="https://github.com/lune-org/mlua-luau-runtime/actions">
-			<img src="https://shields.io/endpoint?url=https://badges.readysetplay.io/workflow/lune-org/mlua-luau-runtime/ci.yaml" alt="CI status" />
+		<a href="https://github.com/lune-org/mlua-luau-scheduler/actions">
+			<img src="https://shields.io/endpoint?url=https://badges.readysetplay.io/workflow/lune-org/mlua-luau-scheduler/ci.yaml" alt="CI status" />
 		</a>
-		<a href="https://github.com/lune-org/mlua-luau-runtime/blob/main/LICENSE.txt">
-			<img src="https://img.shields.io/github/license/lune-org/mlua-luau-runtime.svg?label=License&color=informational" alt="Crate license" />
+		<a href="https://github.com/lune-org/mlua-luau-scheduler/blob/main/LICENSE.txt">
+			<img src="https://img.shields.io/github/license/lune-org/mlua-luau-scheduler.svg?label=License&color=informational" alt="Crate license" />
 		</a>
 	</div>
 </div>
 
 <br/>
 
-An async runtime for Luau, using [`mlua`][mlua] and built on top of [`async-executor`][async-executor].
+An async scheduler for Luau, using [`mlua`][mlua] and built on top of [`async-executor`][async-executor].
 
 This crate is runtime-agnostic and is compatible with any async runtime, including [Tokio][tokio], [smol][smol], [async-std][async-std], and others. </br>
 However, since many dependencies are shared with [smol][smol], depending on it over other runtimes may be preferred.
@@ -39,7 +39,7 @@ use async_io::{block_on, Timer};
 use async_fs::read_to_string;
 
 use mlua::prelude::*;
-use mlua_luau_runtime::*;
+use mlua_luau_scheduler::*;
 ```
 
 ### 2. Set up Lua environment
@@ -73,16 +73,16 @@ lua.globals().set(
 )?;
 ```
 
-### 3. Set up runtime, run threads
+### 3. Set up scheduler, run threads
 
 ```rs
-let rt = Runtime::new(&lua)?;
+let rt = Scheduler::new(&lua)?;
 
 // We can create multiple lua threads ...
 let sleepThread = lua.load("sleep(0.1)");
 let fileThread = lua.load("readFile(\"Cargo.toml\")");
 
-// ... spawn them both onto the runtime ...
+// ... spawn them both onto the scheduler ...
 rt.push_thread_front(sleepThread, ());
 rt.push_thread_front(fileThread, ());
 

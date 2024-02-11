@@ -4,7 +4,7 @@
 use async_io::block_on;
 
 use mlua::prelude::*;
-use mlua_luau_runtime::{Functions, Runtime};
+use mlua_luau_scheduler::{Functions, Scheduler};
 
 const MAIN_SCRIPT: &str = include_str!("./lua/exit_code.luau");
 
@@ -17,12 +17,12 @@ pub fn main() -> LuaResult<()> {
 
     // Set up persistent Lua environment
     let lua = Lua::new();
-    let rt = Runtime::new(&lua);
+    let rt = Scheduler::new(&lua);
     let fns = Functions::new(&lua)?;
 
     lua.globals().set("exit", fns.exit)?;
 
-    // Load the main script into the runtime
+    // Load the main script into the scheduler
     let main = lua.load(MAIN_SCRIPT);
     rt.push_thread_front(main, ())?;
 
