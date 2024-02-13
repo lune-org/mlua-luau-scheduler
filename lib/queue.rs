@@ -60,7 +60,12 @@ impl ThreadQueue {
     #[inline]
     pub async fn wait_for_item(&self) {
         if self.queue.is_empty() {
-            self.event.listen().await;
+            let listener = self.event.listen();
+            // NOTE: Need to check again, we could have gotten
+            // new queued items while creating our listener
+            if self.queue.is_empty() {
+                listener.await;
+            }
         }
     }
 
