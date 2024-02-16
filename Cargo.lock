@@ -372,7 +372,7 @@ dependencies = [
 
 [[package]]
 name = "mlua-luau-scheduler"
-version = "0.0.0"
+version = "0.0.1"
 dependencies = [
  "async-executor",
  "async-fs",
