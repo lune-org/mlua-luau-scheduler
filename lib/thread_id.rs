@@ -11,16 +11,22 @@ use mlua::prelude::*;
     The actual thread may or may not still exist and be active at any given point in time.
 */
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct ThreadId(usize);
+pub struct ThreadId {
+    inner: usize,
+}
 
 impl From<&LuaThread<'_>> for ThreadId {
     fn from(thread: &LuaThread) -> Self {
-        Self(thread.to_pointer() as usize)
+        // TODO: Use this to avoid clone when mlua releases a new version with it
+        // Self { inner: thread.to_pointer() as usize }
+        Self {
+            inner: LuaValue::Thread(thread.clone()).to_pointer() as usize,
+        }
     }
 }
 
 impl Hash for ThreadId {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        self.0.hash(state);
+        self.inner.hash(state);
     }
 }
