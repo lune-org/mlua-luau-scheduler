@@ -17,10 +17,8 @@ pub struct ThreadId {
 
 impl From<&LuaThread<'_>> for ThreadId {
     fn from(thread: &LuaThread) -> Self {
-        // TODO: Use this to avoid clone when mlua releases a new version with it
-        // Self { inner: thread.to_pointer() as usize }
         Self {
-            inner: LuaValue::Thread(thread.clone()).to_pointer() as usize,
+            inner: thread.to_pointer() as usize,
         }
     }
 }
